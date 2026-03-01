@@ -18,7 +18,7 @@ ScreenGui.Parent = PlayerGui
 
 local UI_WIDTH = 80
 local SUB_HEIGHT = 280
-local MAIN_HEIGHT = 280
+local MAIN_HEIGHT = 200
 local BAR_HEIGHT = 20
 local ITEM_HEIGHT = 18
 local SLIDER_HEIGHT = 28
@@ -1118,7 +1118,7 @@ createSubWindow("杂项", Color3.fromRGB(180, 180, 180), function(scroll)
 end)
 
 local function createSettingsWindow()
-    local settingsFrame = createBaseFrame("SettingsFrame", 130, 300)
+    local settingsFrame = createBaseFrame("SettingsFrame", UI_WIDTH, MAIN_HEIGHT)
     settingsFrame.Position = UDim2.new(0.5, 0, 0.18, 0)
     settingsFrame.Parent = ScreenGui
     settingsFrame.ZIndex = BASE_ZINDEX + 50
@@ -1127,7 +1127,7 @@ local function createSettingsWindow()
     settingsTitle.ZIndex = BASE_ZINDEX + 51
     local settingsScroll = createScrollContent(settingsFrame)
     settingsScroll.ZIndex = BASE_ZINDEX + 51
-    setCollapseLogic(settingsTitle, settingsScroll, settingsFrame, BAR_HEIGHT, 300)
+    setCollapseLogic(settingsTitle, settingsScroll, settingsFrame, BAR_HEIGHT, MAIN_HEIGHT)
     makeDraggable(settingsFrame, settingsTitle)
 
     createCategoryHeader(settingsScroll, "显示设置")
