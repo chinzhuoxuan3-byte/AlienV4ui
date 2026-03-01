@@ -3,7 +3,6 @@ local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -18,14 +17,15 @@ ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = PlayerGui
 
 local UI_WIDTH = 80
-local UI_HEIGHT = 200
+local SUB_HEIGHT = 280
+local MAIN_HEIGHT = 280
 local BAR_HEIGHT = 20
 local ITEM_HEIGHT = 18
 local SLIDER_HEIGHT = 28
 local INPUT_HEIGHT = 26
+local BASE_ZINDEX = 9e8
 
 local ACCENT = Color3.fromRGB(0, 255, 120)
-local ACCENT_DIM = Color3.fromRGB(0, 180, 80)
 local BG = Color3.fromRGB(0, 0, 0)
 local BG2 = Color3.fromRGB(10, 10, 10)
 local BORDER = Color3.fromRGB(55, 55, 55)
@@ -36,22 +36,43 @@ local RED = Color3.fromRGB(255, 60, 60)
 local YELLOW = Color3.fromRGB(255, 200, 0)
 local BLUE = Color3.fromRGB(80, 140, 255)
 local PURPLE = Color3.fromRGB(160, 80, 255)
+local ORANGE = Color3.fromRGB(255, 120, 0)
+local CYAN = Color3.fromRGB(0, 200, 255)
 
 local FeatureStates = {}
 local FeatureCallbacks = {}
+local FeatureButtons = {}
 local SliderValues = {}
 local DropdownValues = {}
 local TextValues = {}
 local KeybindValues = {}
 local ColorValues = {}
 local CategoryStates = {}
+local CategoryButtons = {}
 local ActiveSubUIs = {}
 local SubUIFrames = {}
-local SubUIOrder = {}
 local ListeningKeybind = nil
-
-local Notifications = {}
 local NotifCount = 0
+
+local pingHistory = {}
+local frameCount = 0
+local lastFPSTime = tick()
+local lastFPS = 60
+
+local Settings = {
+    ShowFPS = false,
+    ShowPing = false,
+    ShowCoords = false,
+    ShowSpeed = false,
+    NotifEnabled = true,
+    UITransparency = 0.45,
+    AccentColor = "绿色",
+    StatusPanelEnabled = true,
+    WatermarkEnabled = true,
+    AutoSave = true,
+    SnapButton = true,
+    NotifPosition = "左侧",
+}
 
 local function tw(obj, props, t, style, dir)
     local info = TweenInfo.new(t or 0.25, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out)
@@ -106,12 +127,42 @@ local function mkLabel(parent, text, size, color, font, xalign)
     return l
 end
 
+local function makeDraggable(frame, handle)
+    local dragging = false
+    local dragStart = nil
+    local frameStart = nil
+    handle.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = inp.Position
+            frameStart = frame.Position
+            inp.Changed:Connect(function()
+                if inp.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+            local d = inp.Position - dragStart
+            frame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + d.X, frameStart.Y.Scale, frameStart.Y.Offset + d.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
 local StatusPanel = Instance.new("Frame")
 StatusPanel.Name = "StatusPanel"
 StatusPanel.Size = UDim2.new(0, 160, 1, 0)
 StatusPanel.Position = UDim2.new(1, -165, 0, 8)
 StatusPanel.BackgroundTransparency = 1
 StatusPanel.BorderSizePixel = 0
+StatusPanel.ZIndex = BASE_ZINDEX
 StatusPanel.Parent = ScreenGui
 
 local StatusLayout = Instance.new("UIListLayout")
@@ -121,20 +172,20 @@ StatusLayout.Padding = UDim.new(0, 2)
 StatusLayout.Parent = StatusPanel
 
 local function updateStatusPanel()
-    for _, child in ipairs(StatusPanel:GetChildren()) do
-        if child:IsA("TextLabel") or child:IsA("Frame") then
-            child:Destroy()
+    if not Settings.StatusPanelEnabled then
+        for _, c in ipairs(StatusPanel:GetChildren()) do
+            if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end
         end
+        return
+    end
+    for _, c in ipairs(StatusPanel:GetChildren()) do
+        if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end
     end
     local activeList = {}
     for name, state in pairs(FeatureStates) do
-        if state then
-            table.insert(activeList, name)
-        end
+        if state then table.insert(activeList, name) end
     end
-    table.sort(activeList, function(a, b)
-        return #a > #b
-    end)
+    table.sort(activeList, function(a, b) return #a > #b end)
     for i, name in ipairs(activeList) do
         local container = Instance.new("Frame")
         container.Size = UDim2.new(0, 0, 0, 15)
@@ -143,8 +194,8 @@ local function updateStatusPanel()
         container.BackgroundColor3 = BG
         container.BorderSizePixel = 0
         container.LayoutOrder = i
+        container.ZIndex = BASE_ZINDEX
         container.Parent = StatusPanel
-
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0, 0, 1, 0)
         lbl.AutomaticSize = Enum.AutomaticSize.X
@@ -155,34 +206,37 @@ local function updateStatusPanel()
         lbl.TextColor3 = TEXT_WHITE
         lbl.TextXAlignment = Enum.TextXAlignment.Right
         lbl.BorderSizePixel = 0
+        lbl.ZIndex = BASE_ZINDEX
         mkPad(lbl, 0, 0, 4, 2)
         lbl.Parent = container
-
         local bar = Instance.new("Frame")
         bar.Size = UDim2.new(0, 2, 1, 0)
         bar.Position = UDim2.new(1, 0, 0, 0)
         bar.BorderSizePixel = 0
         bar.BackgroundColor3 = ACCENT
+        bar.ZIndex = BASE_ZINDEX
         bar.Parent = container
     end
 end
 
 local NotifContainer = Instance.new("Frame")
 NotifContainer.Name = "NotifContainer"
-NotifContainer.Size = UDim2.new(0, 200, 1, 0)
-NotifContainer.Position = UDim2.new(0.5, -100, 0, 0)
+NotifContainer.Size = UDim2.new(0, 160, 1, -10)
+NotifContainer.Position = UDim2.new(0, 4, 0, 5)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.BorderSizePixel = 0
+NotifContainer.ZIndex = BASE_ZINDEX + 200
 NotifContainer.Parent = ScreenGui
 
 local NotifLayout = Instance.new("UIListLayout")
-NotifLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+NotifLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 NotifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
 NotifLayout.Padding = UDim.new(0, 3)
 NotifLayout.Parent = NotifContainer
 
 local function pushNotif(title, desc, notifType, duration)
+    if not Settings.NotifEnabled then return end
     NotifCount = NotifCount + 1
     local col = ACCENT
     if notifType == "warn" then col = YELLOW
@@ -190,46 +244,51 @@ local function pushNotif(title, desc, notifType, duration)
     elseif notifType == "info" then col = BLUE end
 
     local nf = Instance.new("Frame")
-    nf.Size = UDim2.new(1, 0, 0, 44)
+    nf.Size = UDim2.new(1, 0, 0, 38)
     nf.BackgroundColor3 = BG
-    nf.BackgroundTransparency = 0.2
+    nf.BackgroundTransparency = 0.15
     nf.BorderSizePixel = 0
     nf.LayoutOrder = NotifCount
+    nf.ZIndex = BASE_ZINDEX + 200
     nf.Parent = NotifContainer
     mkCorner(nf, 3)
     mkStroke(nf, col, 1)
 
-    local accent = Instance.new("Frame")
-    accent.Size = UDim2.new(0, 3, 1, 0)
-    accent.BackgroundColor3 = col
-    accent.BorderSizePixel = 0
-    accent.Parent = nf
+    local accentBar = Instance.new("Frame")
+    accentBar.Size = UDim2.new(0, 3, 1, 0)
+    accentBar.BackgroundColor3 = col
+    accentBar.BorderSizePixel = 0
+    accentBar.ZIndex = BASE_ZINDEX + 201
+    accentBar.Parent = nf
 
-    local t1 = mkLabel(nf, title, 10, TEXT_WHITE, Enum.Font.GothamBold)
-    t1.Size = UDim2.new(1, -10, 0, 16)
-    t1.Position = UDim2.new(0, 8, 0, 4)
+    local t1 = mkLabel(nf, title, 9, TEXT_WHITE, Enum.Font.GothamBold)
+    t1.Size = UDim2.new(1, -10, 0, 14)
+    t1.Position = UDim2.new(0, 8, 0, 3)
+    t1.ZIndex = BASE_ZINDEX + 201
 
-    local t2 = mkLabel(nf, desc or "", 9, TEXT_DIM, Enum.Font.Gotham)
-    t2.Size = UDim2.new(1, -10, 0, 20)
-    t2.Position = UDim2.new(0, 8, 0, 20)
+    local t2 = mkLabel(nf, desc or "", 8, TEXT_DIM, Enum.Font.Gotham)
+    t2.Size = UDim2.new(1, -10, 0, 18)
+    t2.Position = UDim2.new(0, 8, 0, 17)
     t2.TextWrapped = true
+    t2.ZIndex = BASE_ZINDEX + 201
 
     task.delay(duration or 3, function()
-        tw(nf, {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0)}, 0.3)
+        tw(nf, {BackgroundTransparency = 1}, 0.3)
         task.wait(0.35)
         nf:Destroy()
     end)
 end
 
-local function createBaseFrame(name)
+local function createBaseFrame(name, w, h)
     local f = Instance.new("Frame")
     f.Name = name
     f.BackgroundColor3 = BG
-    f.BackgroundTransparency = 0.45
-    f.Size = UDim2.fromOffset(UI_WIDTH, UI_HEIGHT)
+    f.BackgroundTransparency = Settings.UITransparency
+    f.Size = UDim2.fromOffset(w or UI_WIDTH, h or SUB_HEIGHT)
     f.BorderSizePixel = 0
     f.Visible = false
     f.ClipsDescendants = true
+    f.ZIndex = BASE_ZINDEX
     mkStroke(f, BORDER, 1)
     return f
 end
@@ -245,19 +304,19 @@ local function createTitleBar(parent, text, color)
     bar.TextSize = 9
     bar.TextColor3 = color or TEXT_WHITE
     bar.AutoButtonColor = false
+    bar.ZIndex = BASE_ZINDEX + 1
     bar.Parent = parent
-
-    local accent = Instance.new("Frame")
-    accent.Size = UDim2.new(1, 0, 0, 1)
-    accent.Position = UDim2.new(0, 0, 1, -1)
-    accent.BackgroundColor3 = color or ACCENT
-    accent.BorderSizePixel = 0
-    accent.Parent = bar
-
+    local accentLine = Instance.new("Frame")
+    accentLine.Size = UDim2.new(1, 0, 0, 1)
+    accentLine.Position = UDim2.new(0, 0, 1, -1)
+    accentLine.BackgroundColor3 = color or ACCENT
+    accentLine.BorderSizePixel = 0
+    accentLine.ZIndex = BASE_ZINDEX + 2
+    accentLine.Parent = bar
     return bar
 end
 
-local function createScrollContent(parent)
+local function createScrollContent(parent, height)
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1, 0, 1, -BAR_HEIGHT)
     scroll.Position = UDim2.new(0, 0, 0, BAR_HEIGHT)
@@ -266,17 +325,21 @@ local function createScrollContent(parent)
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     scroll.BorderSizePixel = 0
+    scroll.ZIndex = BASE_ZINDEX + 1
     scroll.Parent = parent
     mkList(scroll)
     return scroll
 end
 
-local function setCollapseLogic(titleBar, contentFrame, mainFrame)
+local function setCollapseLogic(titleBar, contentFrame, mainFrame, collapseH, expandH)
     local expanded = true
+    local fWidth = mainFrame.Size.X.Offset
+    local cH = collapseH or BAR_HEIGHT
+    local eH = expandH or SUB_HEIGHT
     titleBar.MouseButton1Click:Connect(function()
         expanded = not expanded
-        local targetH = expanded and UI_HEIGHT or BAR_HEIGHT
-        tw(mainFrame, {Size = UDim2.fromOffset(UI_WIDTH, targetH)}, 0.28, Enum.EasingStyle.Quart)
+        local targetH = expanded and eH or cH
+        tw(mainFrame, {Size = UDim2.fromOffset(fWidth, targetH)}, 0.28, Enum.EasingStyle.Quart)
         if not expanded then
             task.delay(0.15, function()
                 if not expanded then contentFrame.Visible = false end
@@ -293,6 +356,7 @@ local function createSeparatorLine(parent)
     sep.BackgroundColor3 = BORDER
     sep.BackgroundTransparency = 0.4
     sep.BorderSizePixel = 0
+    sep.ZIndex = BASE_ZINDEX + 1
     sep.Parent = parent
     return sep
 end
@@ -308,6 +372,7 @@ local function createCategoryHeader(parent, text)
     hdr.TextColor3 = ACCENT
     hdr.TextXAlignment = Enum.TextXAlignment.Center
     hdr.BorderSizePixel = 0
+    hdr.ZIndex = BASE_ZINDEX + 2
     hdr.Parent = parent
     return hdr
 end
@@ -326,6 +391,7 @@ local function createFeatureToggle(parent, name, defaultState, callback)
     btn.TextColor3 = FeatureStates[name] and TEXT_WHITE or TEXT_DIM
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
+    btn.ZIndex = BASE_ZINDEX + 2
     btn.Parent = parent
 
     local indicator = Instance.new("Frame")
@@ -334,7 +400,10 @@ local function createFeatureToggle(parent, name, defaultState, callback)
     indicator.BackgroundColor3 = ACCENT
     indicator.BackgroundTransparency = FeatureStates[name] and 0 or 1
     indicator.BorderSizePixel = 0
+    indicator.ZIndex = BASE_ZINDEX + 3
     indicator.Parent = btn
+
+    FeatureButtons[name] = {btn = btn, indicator = indicator}
 
     btn.MouseButton1Click:Connect(function()
         FeatureStates[name] = not FeatureStates[name]
@@ -346,9 +415,7 @@ local function createFeatureToggle(parent, name, defaultState, callback)
         }, 0.2)
         tw(indicator, {BackgroundTransparency = state and 0 or 1}, 0.2)
         updateStatusPanel()
-        if FeatureCallbacks[name] then
-            pcall(FeatureCallbacks[name], state)
-        end
+        if FeatureCallbacks[name] then pcall(FeatureCallbacks[name], state) end
     end)
 
     return btn
@@ -360,21 +427,25 @@ local function createSliderItem(parent, name, min, max, default, suffix, callbac
     wrapper.Size = UDim2.new(1, 0, 0, SLIDER_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local topRow = Instance.new("Frame")
     topRow.Size = UDim2.new(1, 0, 0, 13)
     topRow.BackgroundTransparency = 1
     topRow.BorderSizePixel = 0
+    topRow.ZIndex = BASE_ZINDEX + 2
     topRow.Parent = wrapper
 
     local nameLbl = mkLabel(topRow, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(0.6, 0, 1, 0)
     nameLbl.Position = UDim2.new(0, 5, 0, 0)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local valLbl = mkLabel(topRow, tostring(default or min) .. (suffix or ""), 8, ACCENT, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
     valLbl.Size = UDim2.new(0.4, -5, 1, 0)
     valLbl.Position = UDim2.new(0.6, 0, 0, 0)
+    valLbl.ZIndex = BASE_ZINDEX + 3
 
     local track = Instance.new("Frame")
     track.Size = UDim2.new(1, -10, 0, 5)
@@ -382,6 +453,7 @@ local function createSliderItem(parent, name, min, max, default, suffix, callbac
     track.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     track.BackgroundTransparency = 0.2
     track.BorderSizePixel = 0
+    track.ZIndex = BASE_ZINDEX + 2
     track.Parent = wrapper
     mkCorner(track, 2)
 
@@ -390,6 +462,7 @@ local function createSliderItem(parent, name, min, max, default, suffix, callbac
     fill.Size = UDim2.new(pct, 0, 1, 0)
     fill.BackgroundColor3 = ACCENT
     fill.BorderSizePixel = 0
+    fill.ZIndex = BASE_ZINDEX + 3
     fill.Parent = track
     mkCorner(fill, 2)
 
@@ -398,15 +471,17 @@ local function createSliderItem(parent, name, min, max, default, suffix, callbac
     knob.Position = UDim2.new(pct, -3, 0.5, -3)
     knob.BackgroundColor3 = TEXT_WHITE
     knob.BorderSizePixel = 0
+    knob.ZIndex = BASE_ZINDEX + 4
     knob.Parent = track
     mkCorner(knob, 4)
 
     local hitbox = Instance.new("TextButton")
-    hitbox.Size = UDim2.new(1, 0, 1, 8)
-    hitbox.Position = UDim2.new(0, 0, 0, -4)
+    hitbox.Size = UDim2.new(1, 0, 1, 12)
+    hitbox.Position = UDim2.new(0, 0, 0, -6)
     hitbox.BackgroundTransparency = 1
     hitbox.Text = ""
     hitbox.BorderSizePixel = 0
+    hitbox.ZIndex = BASE_ZINDEX + 5
     hitbox.Parent = track
 
     local dragging = false
@@ -446,11 +521,13 @@ local function createDropdownItem(parent, name, options, default, callback)
     wrapper.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local nameLbl = mkLabel(wrapper, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(0.44, 0, 1, 0)
     nameLbl.Position = UDim2.new(0, 5, 0, 0)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local ddBtn = Instance.new("TextButton")
     ddBtn.Size = UDim2.new(0.56, -3, 0, 14)
@@ -463,6 +540,7 @@ local function createDropdownItem(parent, name, options, default, callback)
     ddBtn.TextColor3 = TEXT_WHITE
     ddBtn.BorderSizePixel = 0
     ddBtn.AutoButtonColor = false
+    ddBtn.ZIndex = BASE_ZINDEX + 3
     ddBtn.Parent = wrapper
     mkCorner(ddBtn, 2)
     mkStroke(ddBtn, BORDER, 1)
@@ -474,7 +552,7 @@ local function createDropdownItem(parent, name, options, default, callback)
     listFrame.BackgroundTransparency = 0.1
     listFrame.BorderSizePixel = 0
     listFrame.Visible = false
-    listFrame.ZIndex = 10
+    listFrame.ZIndex = BASE_ZINDEX + 10
     listFrame.Parent = wrapper
     mkCorner(listFrame, 2)
     mkStroke(listFrame, BORDER, 1)
@@ -495,6 +573,7 @@ local function createDropdownItem(parent, name, options, default, callback)
             ob.TextColor3 = TEXT_WHITE
             ob.BorderSizePixel = 0
             ob.AutoButtonColor = false
+            ob.ZIndex = BASE_ZINDEX + 11
             ob.Parent = listFrame
             ob.MouseButton1Click:Connect(function()
                 DropdownValues[name] = opt
@@ -523,11 +602,13 @@ local function createKeybindItem(parent, name, default, callback)
     wrapper.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local nameLbl = mkLabel(wrapper, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(0.56, 0, 1, 0)
     nameLbl.Position = UDim2.new(0, 5, 0, 0)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local kBtn = Instance.new("TextButton")
     kBtn.Size = UDim2.new(0.44, -5, 0, 14)
@@ -540,6 +621,7 @@ local function createKeybindItem(parent, name, default, callback)
     kBtn.TextColor3 = ACCENT
     kBtn.BorderSizePixel = 0
     kBtn.AutoButtonColor = false
+    kBtn.ZIndex = BASE_ZINDEX + 3
     kBtn.Parent = wrapper
     mkCorner(kBtn, 2)
     mkStroke(kBtn, BORDER, 1)
@@ -572,11 +654,13 @@ local function createTextInputItem(parent, name, placeholder, default, callback)
     wrapper.Size = UDim2.new(1, 0, 0, INPUT_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local nameLbl = mkLabel(wrapper, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(1, -8, 0, 11)
     nameLbl.Position = UDim2.new(0, 5, 0, 1)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1, -10, 0, 13)
@@ -591,6 +675,7 @@ local function createTextInputItem(parent, name, placeholder, default, callback)
     box.PlaceholderColor3 = TEXT_OFF
     box.BorderSizePixel = 0
     box.ClearTextOnFocus = false
+    box.ZIndex = BASE_ZINDEX + 3
     box.Parent = wrapper
     mkCorner(box, 2)
     mkStroke(box, BORDER, 1)
@@ -609,17 +694,20 @@ local function createColorItem(parent, name, default, callback)
     wrapper.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local nameLbl = mkLabel(wrapper, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(0.65, 0, 1, 0)
     nameLbl.Position = UDim2.new(0, 5, 0, 0)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local preview = Instance.new("Frame")
     preview.Size = UDim2.new(0, 28, 0, 12)
     preview.Position = UDim2.new(1, -33, 0.5, -6)
     preview.BackgroundColor3 = ColorValues[name]
     preview.BorderSizePixel = 0
+    preview.ZIndex = BASE_ZINDEX + 3
     preview.Parent = wrapper
     mkCorner(preview, 2)
     mkStroke(preview, BORDER, 1)
@@ -641,6 +729,7 @@ local function createLabelItem(parent, text, color)
     lbl.TextColor3 = color or TEXT_OFF
     lbl.TextXAlignment = Enum.TextXAlignment.Center
     lbl.BorderSizePixel = 0
+    lbl.ZIndex = BASE_ZINDEX + 2
     lbl.Parent = parent
     return lbl
 end
@@ -650,15 +739,18 @@ local function createValueDisplayItem(parent, name, value, color)
     wrapper.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
     wrapper.BackgroundTransparency = 1
     wrapper.BorderSizePixel = 0
+    wrapper.ZIndex = BASE_ZINDEX + 2
     wrapper.Parent = parent
 
     local nameLbl = mkLabel(wrapper, name, 8, TEXT_DIM, Enum.Font.Gotham)
     nameLbl.Size = UDim2.new(0.6, 0, 1, 0)
     nameLbl.Position = UDim2.new(0, 5, 0, 0)
+    nameLbl.ZIndex = BASE_ZINDEX + 3
 
     local valLbl = mkLabel(wrapper, tostring(value), 8, color or ACCENT, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
     valLbl.Size = UDim2.new(0.4, -5, 1, 0)
     valLbl.Position = UDim2.new(0.6, 0, 0, 0)
+    valLbl.ZIndex = BASE_ZINDEX + 3
 
     return wrapper, valLbl
 end
@@ -675,11 +767,15 @@ local function createCategoryToggle(parent, name, callback)
     btn.TextColor3 = TEXT_DIM
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
+    btn.ZIndex = BASE_ZINDEX + 2
     btn.Parent = parent
 
     local arrow = mkLabel(btn, ">", 8, TEXT_OFF, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
     arrow.Size = UDim2.new(0, 14, 1, 0)
     arrow.Position = UDim2.new(1, -16, 0, 0)
+    arrow.ZIndex = BASE_ZINDEX + 3
+
+    CategoryButtons[name] = {btn = btn, arrow = arrow}
 
     btn.MouseButton1Click:Connect(function()
         CategoryStates[name] = not CategoryStates[name]
@@ -698,14 +794,12 @@ local function createCategoryToggle(parent, name, callback)
 end
 
 local function createSubWindow(name, accentColor, buildFunc)
-    local sub = createBaseFrame(name .. "_Sub")
+    local sub = createBaseFrame(name .. "_Sub", UI_WIDTH, SUB_HEIGHT)
     sub.Parent = ScreenGui
-
     local subTitle = createTitleBar(sub, name, accentColor)
     local subScroll = createScrollContent(sub)
-    setCollapseLogic(subTitle, subScroll, sub)
+    setCollapseLogic(subTitle, subScroll, sub, BAR_HEIGHT, SUB_HEIGHT)
     SubUIFrames[name] = sub
-
     if buildFunc then buildFunc(subScroll) end
 end
 
@@ -718,17 +812,18 @@ local function toggleSubUI(name)
         target.Visible = false
     else
         table.insert(ActiveSubUIs, name)
-        if MainFrame and MainFrame.Visible then target.Visible = true end
     end
 end
 
-local MainFrame = createBaseFrame("MainFrame")
+local MainFrame = createBaseFrame("MainFrame", UI_WIDTH, MAIN_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -(UI_WIDTH / 2), 0.18, 0)
+MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
 
 local MainTitle = createTitleBar(MainFrame, "AlienV4", ACCENT)
 local MainScroll = createScrollContent(MainFrame)
-setCollapseLogic(MainTitle, MainScroll, MainFrame)
+setCollapseLogic(MainTitle, MainScroll, MainFrame, BAR_HEIGHT, MAIN_HEIGHT)
+makeDraggable(MainFrame, MainTitle)
 
 RunService.RenderStepped:Connect(function()
     if MainFrame.Visible then
@@ -843,7 +938,6 @@ createSubWindow("视觉", PURPLE, function(scroll)
     createFeatureToggle(scroll, "自定义准星", false)
     createDropdownItem(scroll, "准星样式", {"十字", "点状", "圆形", "方形"}, "十字")
     createSliderItem(scroll, "准星大小", 4, 40, 12, "px")
-    createSliderItem(scroll, "准星透明度", 0, 100, 0, "%")
     createSeparatorLine(scroll)
     createCategoryHeader(scroll, "环境")
     createFeatureToggle(scroll, "全亮模式", false, function(state)
@@ -872,7 +966,6 @@ createSubWindow("玩家", YELLOW, function(scroll)
     createFeatureToggle(scroll, "超级弹跳", false)
     createFeatureToggle(scroll, "超速冲刺", false)
     createSliderItem(scroll, "重力系数", 0, 200, 100, "%")
-    createSliderItem(scroll, "摩擦力", 0, 100, 50, "%")
     createSeparatorLine(scroll)
     createCategoryHeader(scroll, "属性")
     createFeatureToggle(scroll, "攻击力+", false)
@@ -890,10 +983,8 @@ end)
 
 createSubWindow("利用", RED, function(scroll)
     createCategoryHeader(scroll, "服务端")
-    createFeatureToggle(scroll, "服务端崩溃", false)
     createFeatureToggle(scroll, "远程监听", false)
     createFeatureToggle(scroll, "事件记录", false)
-    createFeatureToggle(scroll, "脚本执行器", false)
     createSeparatorLine(scroll)
     createCategoryHeader(scroll, "绕过")
     createFeatureToggle(scroll, "反检测", false, function(state)
@@ -904,7 +995,7 @@ createSubWindow("利用", RED, function(scroll)
     createFeatureToggle(scroll, "飞行绕过", false)
     createDropdownItem(scroll, "绕过级别", {"低", "中", "高", "极限"}, "中")
     createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "拍摄")
+    createCategoryHeader(scroll, "相机")
     createFeatureToggle(scroll, "相机锁定", false)
     createFeatureToggle(scroll, "相机冻结", false)
     createSliderItem(scroll, "相机速度", 1, 100, 10, "")
@@ -918,11 +1009,11 @@ end)
 
 createSubWindow("客户端", ACCENT, function(scroll)
     createCategoryHeader(scroll, "界面")
-    createFeatureToggle(scroll, "显示FPS", false)
-    createFeatureToggle(scroll, "显示Ping", false)
-    createFeatureToggle(scroll, "显示坐标", false)
-    createFeatureToggle(scroll, "显示速度", false)
-    createFeatureToggle(scroll, "通知开关", true)
+    createFeatureToggle(scroll, "显示FPS", false, function(v) Settings.ShowFPS = v end)
+    createFeatureToggle(scroll, "显示Ping", false, function(v) Settings.ShowPing = v end)
+    createFeatureToggle(scroll, "显示坐标", false, function(v) Settings.ShowCoords = v end)
+    createFeatureToggle(scroll, "显示速度", false, function(v) Settings.ShowSpeed = v end)
+    createFeatureToggle(scroll, "通知开关", true, function(v) Settings.NotifEnabled = v end)
     createSeparatorLine(scroll)
     createCategoryHeader(scroll, "性能")
     createFeatureToggle(scroll, "低画质模式", false, function(state)
@@ -933,80 +1024,244 @@ createSubWindow("客户端", ACCENT, function(scroll)
     createDropdownItem(scroll, "画质等级", {"自动", "1", "3", "5", "7", "10"}, "自动")
     createSliderItem(scroll, "帧率上限", 30, 240, 60, "fps")
     createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "主题")
-    createDropdownItem(scroll, "强调色", {"绿色", "蓝色", "紫色", "红色", "橙色"}, "绿色", function(v)
-        local colorMap = {
-            ["绿色"] = Color3.fromRGB(0,255,120),
-            ["蓝色"] = Color3.fromRGB(80,140,255),
-            ["紫色"] = Color3.fromRGB(160,80,255),
-            ["红色"] = Color3.fromRGB(255,60,60),
-            ["橙色"] = Color3.fromRGB(255,140,30),
-        }
-        ACCENT = colorMap[v] or ACCENT
-    end)
-    createSliderItem(scroll, "界面透明度", 0, 90, 45, "%")
-    createSeparatorLine(scroll)
     createCategoryHeader(scroll, "快捷键")
-    createKeybindItem(scroll, "显示/隐藏UI", Enum.KeyCode.RightShift, function(key) end)
-    createKeybindItem(scroll, "紧急关闭", Enum.KeyCode.End, function()
-        pushNotif("紧急关闭", "所有功能已停用", "error", 3)
-        for k in pairs(FeatureStates) do FeatureStates[k] = false end
-        updateStatusPanel()
-    end)
+    createKeybindItem(scroll, "显示/隐藏UI", Enum.KeyCode.RightShift)
+    createKeybindItem(scroll, "紧急关闭", Enum.KeyCode.End)
     createSeparatorLine(scroll)
     createCategoryHeader(scroll, "关于")
     createLabelItem(scroll, "AlienV4 Vape风格", ACCENT)
-    createLabelItem(scroll, "版本 1.0.0", TEXT_OFF)
+    createLabelItem(scroll, "版本 2.0.0", TEXT_OFF)
 end)
 
-local categoryOrder = {"战斗", "移动", "视觉", "玩家", "利用", "客户端"}
+createSubWindow("武器", ORANGE, function(scroll)
+    createCategoryHeader(scroll, "枪械改装")
+    createFeatureToggle(scroll, "无限弹药", false)
+    createFeatureToggle(scroll, "无需换弹", false)
+    createFeatureToggle(scroll, "快速换弹", false)
+    createFeatureToggle(scroll, "无散射", false)
+    createFeatureToggle(scroll, "弹道追踪", false)
+    createSliderItem(scroll, "子弹速度", 1, 100, 10, "x")
+    createSliderItem(scroll, "子弹大小", 1, 20, 1, "x")
+    createSliderItem(scroll, "弹匣容量", 1, 999, 30, "发")
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "射速")
+    createFeatureToggle(scroll, "全自动", false)
+    createSliderItem(scroll, "射速", 1, 60, 10, "rps")
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "伤害")
+    createFeatureToggle(scroll, "一击必杀", false)
+    createSliderItem(scroll, "武器伤害倍率", 1, 100, 1, "x")
+    createSliderItem(scroll, "爆头倍率", 1, 50, 2, "x")
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "物理")
+    createFeatureToggle(scroll, "子弹穿透", false)
+    createFeatureToggle(scroll, "子弹反弹", false)
+    createSliderItem(scroll, "后坐力", 0, 100, 50, "%")
+    createDropdownItem(scroll, "开火模式", {"单发", "点射", "全自动", "散弹"}, "全自动")
+    createKeybindItem(scroll, "武器切换键", Enum.KeyCode.Tab)
+end)
+
+createSubWindow("世界", CYAN, function(scroll)
+    createCategoryHeader(scroll, "环境")
+    createFeatureToggle(scroll, "时间冻结", false)
+    createFeatureToggle(scroll, "无雨", false)
+    createDropdownItem(scroll, "时间段", {"白天", "黄昏", "夜晚", "凌晨"}, "白天", function(v)
+        pcall(function()
+            local timeMap = {["白天"]=14, ["黄昏"]=18, ["夜晚"]=0, ["凌晨"]=4}
+            game:GetService("Lighting").ClockTime = timeMap[v] or 14
+        end)
+    end)
+    createSliderItem(scroll, "时钟时间", 0, 24, 14, "h", function(v)
+        pcall(function() game:GetService("Lighting").ClockTime = v end)
+    end)
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "物理")
+    createSliderItem(scroll, "世界重力", 0, 400, 196, "", function(v)
+        pcall(function() workspace.Gravity = v end)
+    end)
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "对象")
+    createFeatureToggle(scroll, "移除树木", false)
+    createFeatureToggle(scroll, "移除建筑", false)
+    createFeatureToggle(scroll, "线框模式", false)
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "网络")
+    createFeatureToggle(scroll, "包延迟模拟", false)
+    createSliderItem(scroll, "模拟延迟", 0, 1000, 0, "ms")
+    createSliderItem(scroll, "数据包丢失", 0, 100, 0, "%")
+end)
+
+createSubWindow("杂项", Color3.fromRGB(180, 180, 180), function(scroll)
+    createCategoryHeader(scroll, "聊天")
+    createFeatureToggle(scroll, "消息记录", false)
+    createFeatureToggle(scroll, "自动聊天", false)
+    createTextInputItem(scroll, "自动消息", "输入自动消息内容", "你好！")
+    createSliderItem(scroll, "消息间隔", 1, 60, 5, "s")
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "反制")
+    createFeatureToggle(scroll, "阻止踢出", false)
+    createFeatureToggle(scroll, "防止封禁", false)
+    createFeatureToggle(scroll, "反举报", false)
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "调试")
+    createFeatureToggle(scroll, "显示碰撞箱", false)
+    createFeatureToggle(scroll, "显示路径", false)
+    createFeatureToggle(scroll, "输出远程", false)
+    createFeatureToggle(scroll, "控制台日志", false)
+    createSeparatorLine(scroll)
+    createCategoryHeader(scroll, "工具")
+    createFeatureToggle(scroll, "自动收集", false)
+    createFeatureToggle(scroll, "自动完成任务", false)
+    createFeatureToggle(scroll, "范围互动", false)
+    createSliderItem(scroll, "互动范围", 1, 100, 10, "m")
+    createKeybindItem(scroll, "杂项按键", Enum.KeyCode.M)
+end)
+
+local function createSettingsWindow()
+    local settingsFrame = createBaseFrame("SettingsFrame", 130, 300)
+    settingsFrame.Position = UDim2.new(0.5, 0, 0.18, 0)
+    settingsFrame.Parent = ScreenGui
+    settingsFrame.ZIndex = BASE_ZINDEX + 50
+
+    local settingsTitle = createTitleBar(settingsFrame, "⚙ 设置", ACCENT)
+    settingsTitle.ZIndex = BASE_ZINDEX + 51
+    local settingsScroll = createScrollContent(settingsFrame)
+    settingsScroll.ZIndex = BASE_ZINDEX + 51
+    setCollapseLogic(settingsTitle, settingsScroll, settingsFrame, BAR_HEIGHT, 300)
+    makeDraggable(settingsFrame, settingsTitle)
+
+    createCategoryHeader(settingsScroll, "显示设置")
+    createFeatureToggle(settingsScroll, "状态面板", true, function(v)
+        Settings.StatusPanelEnabled = v
+        updateStatusPanel()
+    end)
+    createFeatureToggle(settingsScroll, "水印显示", true, function(v)
+        Settings.WatermarkEnabled = v
+    end)
+    createFeatureToggle(settingsScroll, "通知系统", true, function(v)
+        Settings.NotifEnabled = v
+    end)
+
+    createSeparatorLine(settingsScroll)
+    createCategoryHeader(settingsScroll, "HUD")
+    createFeatureToggle(settingsScroll, "HUD-FPS", false, function(v) Settings.ShowFPS = v end)
+    createFeatureToggle(settingsScroll, "HUD-Ping", false, function(v) Settings.ShowPing = v end)
+    createFeatureToggle(settingsScroll, "HUD-坐标", false, function(v) Settings.ShowCoords = v end)
+    createFeatureToggle(settingsScroll, "HUD-速度", false, function(v) Settings.ShowSpeed = v end)
+
+    createSeparatorLine(settingsScroll)
+    createCategoryHeader(settingsScroll, "界面")
+    createDropdownItem(settingsScroll, "强调色", {"绿色", "蓝色", "紫色", "红色", "橙色"}, "绿色", function(v)
+        local colorMap = {
+            ["绿色"] = Color3.fromRGB(0, 255, 120),
+            ["蓝色"] = Color3.fromRGB(80, 140, 255),
+            ["紫色"] = Color3.fromRGB(160, 80, 255),
+            ["红色"] = Color3.fromRGB(255, 60, 60),
+            ["橙色"] = Color3.fromRGB(255, 140, 30),
+        }
+        ACCENT = colorMap[v] or ACCENT
+        Settings.AccentColor = v
+    end)
+    createSliderItem(settingsScroll, "UI透明度", 0, 90, 45, "%", function(v)
+        Settings.UITransparency = v / 100
+        MainFrame.BackgroundTransparency = Settings.UITransparency
+        for _, sub in pairs(SubUIFrames) do
+            sub.BackgroundTransparency = Settings.UITransparency
+        end
+    end)
+
+    createSeparatorLine(settingsScroll)
+    createCategoryHeader(settingsScroll, "快捷键")
+    createKeybindItem(settingsScroll, "设置面板键", Enum.KeyCode.P)
+
+    createSeparatorLine(settingsScroll)
+    local resetAllBtn = Instance.new("TextButton")
+    resetAllBtn.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
+    resetAllBtn.BackgroundTransparency = 0.6
+    resetAllBtn.BackgroundColor3 = RED
+    resetAllBtn.Text = "重置所有"
+    resetAllBtn.Font = Enum.Font.GothamBold
+    resetAllBtn.TextSize = 9
+    resetAllBtn.TextColor3 = TEXT_WHITE
+    resetAllBtn.BorderSizePixel = 0
+    resetAllBtn.AutoButtonColor = false
+    resetAllBtn.ZIndex = BASE_ZINDEX + 52
+    resetAllBtn.Parent = settingsScroll
+    resetAllBtn.MouseButton1Click:Connect(function()
+        for k in pairs(FeatureStates) do
+            FeatureStates[k] = false
+            if FeatureButtons[k] then
+                local b = FeatureButtons[k]
+                b.btn.BackgroundTransparency = 1
+                b.btn.BackgroundColor3 = BG
+                b.btn.TextColor3 = TEXT_DIM
+                b.indicator.BackgroundTransparency = 1
+            end
+        end
+        updateStatusPanel()
+        pushNotif("重置", "所有开关已关闭", "warn", 2)
+    end)
+
+    return settingsFrame
+end
+
+local SettingsFrame = createSettingsWindow()
+
+local categoryOrder = {"战斗", "移动", "视觉", "玩家", "利用", "客户端", "武器", "世界", "杂项"}
 for _, catName in ipairs(categoryOrder) do
     createCategoryToggle(MainScroll, catName, function(state)
         toggleSubUI(catName)
     end)
 end
 
-local FPSDisplay, PingDisplay, CoordsDisplay, SpeedDisplay
-local infoFrame = Instance.new("Frame")
-infoFrame.Name = "InfoHUD"
-infoFrame.Size = UDim2.new(0, 90, 0, 0)
-infoFrame.Position = UDim2.new(0, 4, 1, -4)
-infoFrame.AnchorPoint = Vector2.new(0, 1)
-infoFrame.BackgroundTransparency = 1
-infoFrame.BorderSizePixel = 0
-infoFrame.Parent = ScreenGui
-mkList(infoFrame, Enum.FillDirection.Vertical, 1)
+createSeparatorLine(MainScroll)
+createCategoryToggle(MainScroll, "⚙ 设置", function(state)
+    SettingsFrame.Visible = state
+    if state then
+        SettingsFrame.Position = UDim2.new(MainFrame.Position.X.Scale, MainFrame.Position.X.Offset + UI_WIDTH + 4, MainFrame.Position.Y.Scale, MainFrame.Position.Y.Offset)
+    end
+end)
 
-local function mkHUDLabel(text)
-    local lf = Instance.new("Frame")
-    lf.Size = UDim2.new(1, 0, 0, 13)
-    lf.BackgroundColor3 = BG
-    lf.BackgroundTransparency = 0.35
-    lf.BorderSizePixel = 0
-    lf.Parent = infoFrame
-    local lbl = mkLabel(lf, text, 8, TEXT_WHITE, Enum.Font.GothamBold)
-    lbl.Size = UDim2.new(1, -4, 1, 0)
-    lbl.Position = UDim2.new(0, 3, 0, 0)
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(0, 2, 1, 0)
-    bar.BackgroundColor3 = ACCENT
-    bar.BorderSizePixel = 0
-    bar.Parent = lf
-    return lbl, lf
+local pingHistory2 = {}
+local function trackPing()
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            pcall(function()
+                local p = math.round(LocalPlayer:GetNetworkPing() * 1000)
+                table.insert(pingHistory2, p)
+                if #pingHistory2 > 60 then table.remove(pingHistory2, 1) end
+            end)
+        end
+    end)
+end
+trackPing()
+
+local function getAveragePing()
+    if #pingHistory2 == 0 then return 0 end
+    local sum = 0
+    for _, v in ipairs(pingHistory2) do sum = sum + v end
+    return math.round(sum / #pingHistory2)
 end
 
-local FPSLabel, FPSFrame = mkHUDLabel("FPS: --")
-local PingLabel, PingFrame = mkHUDLabel("Ping: --")
-local CoordsLabel, CoordsFrame = mkHUDLabel("XYZ: --")
-local SpeedLabel, SpeedFrame = mkHUDLabel("SPD: --")
-FPSFrame.Visible = false
-PingFrame.Visible = false
-CoordsFrame.Visible = false
-SpeedFrame.Visible = false
+local statFrame = createBaseFrame("StatWindow", 100, 110)
+statFrame.Position = UDim2.new(0, 170, 0, 8)
+statFrame.ZIndex = BASE_ZINDEX + 30
+statFrame.Parent = ScreenGui
 
-local frameCount = 0
-local lastFPSTime = tick()
-local lastFPS = 60
+local statTitle = createTitleBar(statFrame, "数据面板", ACCENT)
+statTitle.ZIndex = BASE_ZINDEX + 31
+local statScroll = createScrollContent(statFrame)
+statScroll.ZIndex = BASE_ZINDEX + 31
+setCollapseLogic(statTitle, statScroll, statFrame, BAR_HEIGHT, 110)
+makeDraggable(statFrame, statTitle)
+
+local _, avgPingLbl = createValueDisplayItem(statScroll, "均Ping", "-- ms", YELLOW)
+local _, fpsStatLbl = createValueDisplayItem(statScroll, "FPS", "--", ACCENT)
+local _, activeCountLbl = createValueDisplayItem(statScroll, "功能数", "0", BLUE)
+local _, playerCountLbl = createValueDisplayItem(statScroll, "玩家数", "0", TEXT_DIM)
+local _, coordsStatLbl = createValueDisplayItem(statScroll, "坐标", "--", TEXT_OFF)
+local _, speedStatLbl = createValueDisplayItem(statScroll, "速度", "--", CYAN)
 
 RunService.Heartbeat:Connect(function()
     frameCount = frameCount + 1
@@ -1017,44 +1272,20 @@ RunService.Heartbeat:Connect(function()
         lastFPSTime = now
     end
 
-    FPSFrame.Visible = FeatureStates["显示FPS"] or false
-    PingFrame.Visible = FeatureStates["显示Ping"] or false
-    CoordsFrame.Visible = FeatureStates["显示坐标"] or false
-    SpeedFrame.Visible = FeatureStates["显示速度"] or false
-
-    if FeatureStates["显示FPS"] then
-        local fpsColor = lastFPS >= 50 and ACCENT or (lastFPS >= 30 and YELLOW or RED)
-        FPSLabel.Text = "FPS: " .. lastFPS
-        FPSLabel.TextColor3 = fpsColor
-    end
-
-    if FeatureStates["显示Ping"] then
+    if statFrame.Visible then
         pcall(function()
-            local ping = LocalPlayer:GetNetworkPing() * 1000
-            local pingRound = math.round(ping)
-            local pingColor = pingRound < 80 and ACCENT or (pingRound < 150 and YELLOW or RED)
-            PingLabel.Text = "Ping: " .. pingRound .. "ms"
-            PingLabel.TextColor3 = pingColor
-        end)
-    end
-
-    if FeatureStates["显示坐标"] then
-        pcall(function()
+            avgPingLbl.Text = getAveragePing() .. "ms"
+            fpsStatLbl.Text = tostring(lastFPS)
+            local cnt = 0
+            for _, v in pairs(FeatureStates) do if v then cnt = cnt + 1 end end
+            activeCountLbl.Text = tostring(cnt)
+            playerCountLbl.Text = tostring(#Players:GetPlayers())
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
                 local pos = char.HumanoidRootPart.Position
-                CoordsLabel.Text = math.round(pos.X) .. "," .. math.round(pos.Y) .. "," .. math.round(pos.Z)
-            end
-        end)
-    end
-
-    if FeatureStates["显示速度"] then
-        pcall(function()
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
+                coordsStatLbl.Text = math.round(pos.X) .. "," .. math.round(pos.Y)
                 local vel = char.HumanoidRootPart.Velocity
-                local spd = math.round(Vector3.new(vel.X, 0, vel.Z).Magnitude)
-                SpeedLabel.Text = "SPD: " .. spd
+                speedStatLbl.Text = math.round(Vector3.new(vel.X, 0, vel.Z).Magnitude) .. "/s"
             end
         end)
     end
@@ -1071,21 +1302,164 @@ RunService.Heartbeat:Connect(function()
     end
 
     if FeatureStates["低重力"] then
-        pcall(function()
-            workspace.Gravity = (SliderValues["重力系数"] or 100) * 0.196
-        end)
-    else
-        pcall(function()
-            if workspace.Gravity ~= 196.2 and not FeatureStates["低重力"] then
-                workspace.Gravity = 196.2
-            end
-        end)
+        pcall(function() workspace.Gravity = (SliderValues["重力系数"] or 100) * 0.196 end)
     end
 
     if FeatureStates["全亮模式"] then
         pcall(function()
             game:GetService("Lighting").Brightness = 10
             game:GetService("Lighting").GlobalShadows = false
+        end)
+    end
+end)
+
+createSeparatorLine(MainScroll)
+createCategoryToggle(MainScroll, "数据面板", function(state)
+    statFrame.Visible = state
+end)
+
+createSeparatorLine(MainScroll)
+createCategoryHeader(MainScroll, "快速操作")
+
+local panicBtn = Instance.new("TextButton")
+panicBtn.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
+panicBtn.BackgroundTransparency = 0.6
+panicBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+panicBtn.Text = "紧急停止"
+panicBtn.Font = Enum.Font.GothamBold
+panicBtn.TextSize = 9
+panicBtn.TextColor3 = RED
+panicBtn.BorderSizePixel = 0
+panicBtn.AutoButtonColor = false
+panicBtn.ZIndex = BASE_ZINDEX + 2
+panicBtn.Parent = MainScroll
+panicBtn.MouseButton1Click:Connect(function()
+    for k in pairs(FeatureStates) do FeatureStates[k] = false end
+    updateStatusPanel()
+    MainFrame.Visible = false
+    pushNotif("紧急停止", "UI已隐藏，功能已停用", "error", 4)
+end)
+
+local infoFrame = Instance.new("Frame")
+infoFrame.Name = "InfoHUD"
+infoFrame.Size = UDim2.new(0, 95, 0, 0)
+infoFrame.AutomaticSize = Enum.AutomaticSize.Y
+infoFrame.Position = UDim2.new(0, 4, 0.5, 0)
+infoFrame.BackgroundTransparency = 1
+infoFrame.BorderSizePixel = 0
+infoFrame.ZIndex = BASE_ZINDEX + 5
+infoFrame.Parent = ScreenGui
+mkList(infoFrame, Enum.FillDirection.Vertical, 1)
+
+local function mkHUDLabel(text)
+    local lf = Instance.new("Frame")
+    lf.Size = UDim2.new(1, 0, 0, 13)
+    lf.BackgroundColor3 = BG
+    lf.BackgroundTransparency = 0.35
+    lf.BorderSizePixel = 0
+    lf.ZIndex = BASE_ZINDEX + 5
+    lf.Parent = infoFrame
+    local lbl = mkLabel(lf, text, 8, TEXT_WHITE, Enum.Font.GothamBold)
+    lbl.Size = UDim2.new(1, -4, 1, 0)
+    lbl.Position = UDim2.new(0, 3, 0, 0)
+    lbl.ZIndex = BASE_ZINDEX + 6
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 2, 1, 0)
+    bar.BackgroundColor3 = ACCENT
+    bar.BorderSizePixel = 0
+    bar.ZIndex = BASE_ZINDEX + 6
+    bar.Parent = lf
+    return lbl, lf
+end
+
+local FPSLabel, FPSFrame = mkHUDLabel("FPS: --")
+local PingLabel, PingFrame = mkHUDLabel("Ping: --")
+local CoordsLabel, CoordsFrame = mkHUDLabel("XYZ: --")
+local SpeedLabel, SpeedFrame = mkHUDLabel("SPD: --")
+
+RunService.Heartbeat:Connect(function()
+    FPSFrame.Visible = Settings.ShowFPS
+    PingFrame.Visible = Settings.ShowPing
+    CoordsFrame.Visible = Settings.ShowCoords
+    SpeedFrame.Visible = Settings.ShowSpeed
+
+    if Settings.ShowFPS then
+        FPSLabel.TextColor3 = lastFPS >= 50 and ACCENT or (lastFPS >= 30 and YELLOW or RED)
+        FPSLabel.Text = "FPS: " .. lastFPS
+    end
+    if Settings.ShowPing then
+        pcall(function()
+            local ping = math.round(LocalPlayer:GetNetworkPing() * 1000)
+            PingLabel.TextColor3 = ping < 80 and ACCENT or (ping < 150 and YELLOW or RED)
+            PingLabel.Text = "Ping: " .. ping .. "ms"
+        end)
+    end
+    if Settings.ShowCoords then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local pos = char.HumanoidRootPart.Position
+                CoordsLabel.Text = math.round(pos.X) .. "," .. math.round(pos.Y) .. "," .. math.round(pos.Z)
+            end
+        end)
+    end
+    if Settings.ShowSpeed then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local vel = char.HumanoidRootPart.Velocity
+                SpeedLabel.Text = "SPD: " .. math.round(Vector3.new(vel.X, 0, vel.Z).Magnitude)
+            end
+        end)
+    end
+end)
+
+local WatermarkFrame = Instance.new("Frame")
+WatermarkFrame.Name = "Watermark"
+WatermarkFrame.Size = UDim2.new(0, 0, 0, 18)
+WatermarkFrame.AutomaticSize = Enum.AutomaticSize.X
+WatermarkFrame.Position = UDim2.new(0.5, 0, 0, 5)
+WatermarkFrame.AnchorPoint = Vector2.new(0.5, 0)
+WatermarkFrame.BackgroundColor3 = BG
+WatermarkFrame.BackgroundTransparency = 0.2
+WatermarkFrame.BorderSizePixel = 0
+WatermarkFrame.ZIndex = BASE_ZINDEX + 3
+WatermarkFrame.Parent = ScreenGui
+mkCorner(WatermarkFrame, 3)
+mkStroke(WatermarkFrame, ACCENT, 1)
+mkPad(WatermarkFrame, 0, 0, 6, 6)
+
+local wmLayout = Instance.new("UIListLayout")
+wmLayout.FillDirection = Enum.FillDirection.Horizontal
+wmLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+wmLayout.Padding = UDim.new(0, 6)
+wmLayout.Parent = WatermarkFrame
+
+local function mkWMLbl(text, color, bold)
+    local l = mkLabel(WatermarkFrame, text, 9, color, bold and Enum.Font.GothamBold or Enum.Font.Gotham)
+    l.Size = UDim2.new(0, 0, 1, 0)
+    l.AutomaticSize = Enum.AutomaticSize.X
+    l.ZIndex = BASE_ZINDEX + 4
+    return l
+end
+
+local wmName = mkWMLbl("AlienV4", ACCENT, true)
+local wmSep1 = mkWMLbl("|", BORDER, false)
+local wmUser = mkWMLbl(LocalPlayer.DisplayName, TEXT_DIM, false)
+local wmSep2 = mkWMLbl("|", BORDER, false)
+local wmFPS = mkWMLbl("60fps", TEXT_OFF, false)
+local wmSep3 = mkWMLbl("|", BORDER, false)
+local wmPing = mkWMLbl("--ms", TEXT_OFF, false)
+
+RunService.Heartbeat:Connect(function()
+    WatermarkFrame.Visible = Settings.WatermarkEnabled
+    if Settings.WatermarkEnabled then
+        wmFPS.TextColor3 = lastFPS >= 50 and ACCENT or RED
+        wmFPS.Text = lastFPS .. "fps"
+        pcall(function()
+            local ping = math.round(LocalPlayer:GetNetworkPing() * 1000)
+            wmPing.TextColor3 = ping < 100 and ACCENT or (ping < 200 and YELLOW or RED)
+            wmPing.Text = ping .. "ms"
         end)
     end
 end)
@@ -1102,26 +1476,21 @@ MainButton.Font = Enum.Font.GothamBold
 MainButton.TextColor3 = ACCENT
 MainButton.TextSize = 18
 MainButton.AutoButtonColor = false
-MainButton.ZIndex = 10
+MainButton.ZIndex = 9e9
 mkCorner(MainButton, 4)
-
-local MainButtonStroke = mkStroke(MainButton, BORDER, 1)
+mkStroke(MainButton, BORDER, 1)
 
 local accentDot = Instance.new("Frame")
 accentDot.Size = UDim2.new(0, 5, 0, 5)
 accentDot.Position = UDim2.new(1, -7, 0, 2)
 accentDot.BackgroundColor3 = ACCENT
 accentDot.BorderSizePixel = 0
-accentDot.ZIndex = 11
+accentDot.ZIndex = 9e9
 accentDot.Parent = MainButton
 mkCorner(accentDot, 3)
 
-MainButton.MouseEnter:Connect(function()
-    tw(MainButton, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, 0.1)
-end)
-MainButton.MouseLeave:Connect(function()
-    tw(MainButton, {BackgroundColor3 = Color3.fromRGB(8, 8, 8)}, 0.1)
-end)
+MainButton.MouseEnter:Connect(function() tw(MainButton, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, 0.1) end)
+MainButton.MouseLeave:Connect(function() tw(MainButton, {BackgroundColor3 = Color3.fromRGB(8, 8, 8)}, 0.1) end)
 
 local lastSavedPos = MainFrame.Position
 
@@ -1170,9 +1539,7 @@ local function initDragging()
                 if not btnMoved then
                     local showing = not MainFrame.Visible
                     MainFrame.Visible = showing
-                    if showing then
-                        MainFrame.Position = lastSavedPos
-                    end
+                    if showing then MainFrame.Position = lastSavedPos end
                     tw(MainButton, {TextColor3 = showing and ACCENT or TEXT_DIM}, 0.15)
                     accentDot.BackgroundColor3 = showing and ACCENT or TEXT_OFF
                 else
@@ -1188,449 +1555,41 @@ local function initDragging()
     end)
 end
 
-UserInputService.InputBegan:Connect(function(inp, gpe)
-    if gpe then return end
-    if ListeningKeybind then return end
-    if inp.KeyCode == KeybindValues["显示/隐藏UI"] then
-        local showing = not MainFrame.Visible
-        MainFrame.Visible = showing
-        tw(MainButton, {TextColor3 = showing and ACCENT or TEXT_DIM}, 0.15)
-        accentDot.BackgroundColor3 = showing and ACCENT or TEXT_OFF
-    elseif inp.KeyCode == KeybindValues["紧急关闭"] then
-        for k in pairs(FeatureStates) do FeatureStates[k] = false end
-        updateStatusPanel()
-        pushNotif("紧急关闭", "所有功能已停用", "error", 3)
-    elseif inp.KeyCode == KeybindValues["飞行按键"] then
-        FeatureStates["飞行模式"] = not FeatureStates["飞行模式"]
-        updateStatusPanel()
-    elseif inp.KeyCode == KeybindValues["自瞄按键"] then
-        FeatureStates["自瞄锁定"] = not FeatureStates["自瞄锁定"]
-        updateStatusPanel()
-    end
-end)
-
-initDragging()
-pushNotif("AlienV4", "已成功加载 Vape风格", "info", 4)
-
-createSubWindow("武器", Color3.fromRGB(255, 120, 0), function(scroll)
-    createCategoryHeader(scroll, "枪械改装")
-    createFeatureToggle(scroll, "无限弹药", false)
-    createFeatureToggle(scroll, "无需换弹", false)
-    createFeatureToggle(scroll, "快速换弹", false)
-    createFeatureToggle(scroll, "无散射", false)
-    createFeatureToggle(scroll, "弹道追踪", false)
-    createSliderItem(scroll, "子弹速度", 1, 100, 10, "x")
-    createSliderItem(scroll, "子弹大小", 1, 20, 1, "x")
-    createSliderItem(scroll, "弹匣容量", 1, 999, 30, "发")
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "射速")
-    createFeatureToggle(scroll, "全自动", false)
-    createSliderItem(scroll, "射速", 1, 60, 10, "rps")
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "伤害")
-    createFeatureToggle(scroll, "一击必杀", false)
-    createSliderItem(scroll, "伤害倍率", 1, 100, 1, "x")
-    createSliderItem(scroll, "爆头倍率", 1, 50, 2, "x")
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "物理")
-    createFeatureToggle(scroll, "子弹穿透", false)
-    createFeatureToggle(scroll, "子弹反弹", false)
-    createSliderItem(scroll, "后坐力", 0, 100, 50, "%")
-    createDropdownItem(scroll, "开火模式", {"单发", "点射", "全自动", "散弹"}, "全自动")
-    createKeybindItem(scroll, "武器切换键", Enum.KeyCode.Tab)
-end)
-
-createSubWindow("世界", Color3.fromRGB(0, 200, 255), function(scroll)
-    createCategoryHeader(scroll, "环境")
-    createFeatureToggle(scroll, "时间冻结", false)
-    createFeatureToggle(scroll, "天气控制", false)
-    createFeatureToggle(scroll, "无雨", false)
-    createDropdownItem(scroll, "时间段", {"白天", "黄昏", "夜晚", "凌晨"}, "白天", function(v)
-        pcall(function()
-            local timeMap = {["白天"]=14, ["黄昏"]=18, ["夜晚"]=0, ["凌晨"]=4}
-            game:GetService("Lighting").ClockTime = timeMap[v] or 14
-        end)
-    end)
-    createSliderItem(scroll, "时钟时间", 0, 24, 14, "h", function(v)
-        pcall(function() game:GetService("Lighting").ClockTime = v end)
-    end)
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "物理")
-    createFeatureToggle(scroll, "慢动作", false, function(state)
-        pcall(function()
-            workspace:GetPropertyChangedSignal("DistributedGameTime"):Wait()
-        end)
-    end)
-    createSliderItem(scroll, "世界重力", 0, 400, 196, "", function(v)
-        pcall(function() workspace.Gravity = v end)
-    end)
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "对象")
-    createFeatureToggle(scroll, "移除树木", false)
-    createFeatureToggle(scroll, "移除建筑", false)
-    createFeatureToggle(scroll, "线框模式", false)
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "网络")
-    createFeatureToggle(scroll, "包延迟模拟", false)
-    createSliderItem(scroll, "模拟延迟", 0, 1000, 0, "ms")
-    createSliderItem(scroll, "数据包丢失", 0, 100, 0, "%")
-end)
-
-createSubWindow("杂项", Color3.fromRGB(180, 180, 180), function(scroll)
-    createCategoryHeader(scroll, "聊天")
-    createFeatureToggle(scroll, "消息记录", false)
-    createFeatureToggle(scroll, "自动聊天", false)
-    createTextInputItem(scroll, "自动消息", "输入自动消息内容", "你好！")
-    createSliderItem(scroll, "消息间隔", 1, 60, 5, "s")
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "反制")
-    createFeatureToggle(scroll, "阻止踢出", false)
-    createFeatureToggle(scroll, "防止封禁", false)
-    createFeatureToggle(scroll, "反举报", false)
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "调试")
-    createFeatureToggle(scroll, "显示碰撞箱", false)
-    createFeatureToggle(scroll, "显示路径", false)
-    createFeatureToggle(scroll, "输出远程", false)
-    createFeatureToggle(scroll, "控制台日志", false)
-    createSeparatorLine(scroll)
-    createCategoryHeader(scroll, "工具")
-    createFeatureToggle(scroll, "自动收集", false)
-    createFeatureToggle(scroll, "自动完成任务", false)
-    createFeatureToggle(scroll, "范围互动", false)
-    createSliderItem(scroll, "互动范围", 1, 100, 10, "m")
-    createKeybindItem(scroll, "杂项按键", Enum.KeyCode.M)
-end)
-
-local extraOrder = {"武器", "世界", "杂项"}
-for _, catName in ipairs(extraOrder) do
-    createCategoryToggle(MainScroll, catName, function(state)
-        toggleSubUI(catName)
-    end)
-end
-
-local function createFloatingESPRenderer()
-    local connection
-    local function startESP()
-        connection = RunService.RenderStepped:Connect(function()
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player == LocalPlayer then continue end
-                if not FeatureStates["方框透视"] and not FeatureStates["线条指向"] and not FeatureStates["显示名称"] then continue end
-                pcall(function()
-                    local char = player.Character
-                    if not char then return end
-                    local hrp = char:FindFirstChild("HumanoidRootPart")
-                    local hum = char:FindFirstChildOfClass("Humanoid")
-                    if not hrp or not hum then return end
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-                    if not onScreen then return end
-                end)
-            end
-        end)
-    end
-    startESP()
-    return function()
-        if connection then connection:Disconnect() end
-    end
-end
-createFloatingESPRenderer()
-
-local keybindWatcher = UserInputService.InputBegan:Connect(function(inp, gpe)
-    if gpe then return end
-    if ListeningKeybind then return end
-    for name, key in pairs(KeybindValues) do
-        if inp.KeyCode == key and FeatureStates[name] ~= nil then
-        end
-    end
-end)
-
-local function autoSaveConfig()
-    task.spawn(function()
-        while true do
-            task.wait(30)
-            local cfg = {
-                features = {},
-                sliders = {},
-                dropdowns = {},
-                keybinds = {},
-            }
-            for k, v in pairs(FeatureStates) do cfg.features[k] = v end
-            for k, v in pairs(SliderValues) do cfg.sliders[k] = v end
-            for k, v in pairs(DropdownValues) do cfg.dropdowns[k] = v end
-        end
-    end)
-end
-autoSaveConfig()
-
-local pingHistory = {}
-local function trackPing()
-    task.spawn(function()
-        while true do
-            task.wait(1)
-            pcall(function()
-                local p = math.round(LocalPlayer:GetNetworkPing() * 1000)
-                table.insert(pingHistory, p)
-                if #pingHistory > 60 then table.remove(pingHistory, 1) end
-            end)
-        end
-    end)
-end
-trackPing()
-
-local function getAveragePing()
-    if #pingHistory == 0 then return 0 end
-    local sum = 0
-    for _, v in ipairs(pingHistory) do sum = sum + v end
-    return math.round(sum / #pingHistory)
-end
-
-local statWindow = createBaseFrame("StatWindow")
-statWindow.Size = UDim2.fromOffset(90, 100)
-statWindow.Position = UDim2.new(0, 4, 0, 4)
-statWindow.Parent = ScreenGui
-statWindow.Visible = false
-
-local statTitle = createTitleBar(statWindow, "Stats", ACCENT)
-local statScroll = createScrollContent(statWindow)
-setCollapseLogic(statTitle, statScroll, statWindow)
-
-local _, avgPingLbl = createValueDisplayItem(statScroll, "均Ping", "-- ms", YELLOW)
-local _, fpsStatLbl = createValueDisplayItem(statScroll, "FPS", "--", ACCENT)
-local _, activeCountLbl = createValueDisplayItem(statScroll, "功能数", "0", BLUE)
-local _, playerCountLbl = createValueDisplayItem(statScroll, "玩家数", "0", TEXT_DIM)
-
-RunService.Heartbeat:Connect(function()
-    if not statWindow.Visible then return end
-    pcall(function()
-        avgPingLbl.Text = getAveragePing() .. " ms"
-        fpsStatLbl.Text = tostring(lastFPS)
-        local cnt = 0
-        for _, v in pairs(FeatureStates) do if v then cnt = cnt + 1 end end
-        activeCountLbl.Text = tostring(cnt)
-        playerCountLbl.Text = tostring(#Players:GetPlayers())
-    end)
-end)
-
-createCategoryToggle(MainScroll, "数据面板", function(state)
-    statWindow.Visible = state
-end)
-
-local function addQuickActions()
-    createSeparatorLine(MainScroll)
-    createCategoryHeader(MainScroll, "快速操作")
-
-    local resetBtn = Instance.new("TextButton")
-    resetBtn.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
-    resetBtn.BackgroundTransparency = 0.7
-    resetBtn.BackgroundColor3 = RED
-    resetBtn.Text = "重置所有"
-    resetBtn.Font = Enum.Font.GothamBold
-    resetBtn.TextSize = 9
-    resetBtn.TextColor3 = TEXT_WHITE
-    resetBtn.BorderSizePixel = 0
-    resetBtn.AutoButtonColor = false
-    resetBtn.Parent = MainScroll
-
-    local panicBtn = Instance.new("TextButton")
-    panicBtn.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
-    panicBtn.BackgroundTransparency = 0.6
-    panicBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-    panicBtn.Text = "紧急停止"
-    panicBtn.Font = Enum.Font.GothamBold
-    panicBtn.TextSize = 9
-    panicBtn.TextColor3 = RED
-    panicBtn.BorderSizePixel = 0
-    panicBtn.AutoButtonColor = false
-    panicBtn.Parent = MainScroll
-
-    resetBtn.MouseButton1Click:Connect(function()
-        for k in pairs(FeatureStates) do FeatureStates[k] = false end
-        updateStatusPanel()
-        pushNotif("重置", "所有开关已关闭", "warn", 2)
-        tw(resetBtn, {BackgroundColor3 = ACCENT}, 0.1)
-        task.delay(0.3, function() tw(resetBtn, {BackgroundColor3 = RED}, 0.2) end)
-    end)
-
-    panicBtn.MouseButton1Click:Connect(function()
-        for k in pairs(FeatureStates) do FeatureStates[k] = false end
-        updateStatusPanel()
-        MainFrame.Visible = false
-        pushNotif("紧急停止", "UI已隐藏，功能已停用", "error", 4)
-    end)
-end
-addQuickActions()
-
-Players.PlayerAdded:Connect(function(plr)
-    pushNotif("玩家加入", plr.DisplayName .. " 加入了游戏", "info", 3)
-end)
-Players.PlayerRemoving:Connect(function(plr)
-    pushNotif("玩家离开", plr.DisplayName .. " 离开了游戏", "warn", 3)
-end)
-
-updateStatusPanel()
-
-local function createContextMenu()
-    local ctx = Instance.new("Frame")
-    ctx.Name = "ContextMenu"
-    ctx.Size = UDim2.fromOffset(90, 0)
-    ctx.AutomaticSize = Enum.AutomaticSize.Y
-    ctx.BackgroundColor3 = BG
-    ctx.BackgroundTransparency = 0.15
-    ctx.BorderSizePixel = 0
-    ctx.Visible = false
-    ctx.ZIndex = 100
-    ctx.Parent = ScreenGui
-    mkCorner(ctx, 3)
-    mkStroke(ctx, BORDER, 1)
-    mkList(ctx)
-
-    local ctxItems = {
-        {"复制坐标", function()
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    local p = char.HumanoidRootPart.Position
-                    pushNotif("坐标复制", math.round(p.X)..","..math.round(p.Y)..","..math.round(p.Z), "info", 2)
-                end
-            end)
-        end},
-        {"传送到此", function()
-            pushNotif("传送", "功能需在游戏中实现", "warn", 2)
-        end},
-        {"复位角色", function()
-            pcall(function()
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").Health = 0
-            end)
-        end},
-        {"刷新角色", function()
-            pcall(function()
-                LocalPlayer:LoadCharacter()
-            end)
-        end},
-        {"关闭菜单", function()
-            ctx.Visible = false
-        end},
-    }
-
-    for _, item in ipairs(ctxItems) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 18)
-        btn.BackgroundTransparency = 1
-        btn.Text = item[1]
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 9
-        btn.TextColor3 = TEXT_DIM
-        btn.BorderSizePixel = 0
-        btn.AutoButtonColor = false
-        btn.Parent = ctx
-        btn.MouseEnter:Connect(function()
-            tw(btn, {TextColor3 = TEXT_WHITE, BackgroundTransparency = 0.7}, 0.1)
-            btn.BackgroundColor3 = ACCENT
-        end)
-        btn.MouseLeave:Connect(function()
-            tw(btn, {TextColor3 = TEXT_DIM, BackgroundTransparency = 1}, 0.1)
-        end)
-        btn.MouseButton1Click:Connect(function()
-            ctx.Visible = false
-            if item[2] then pcall(item[2]) end
-        end)
-    end
-
-    UserInputService.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton2 then
-            ctx.Position = UDim2.new(0, inp.Position.X + 4, 0, inp.Position.Y + 4)
-            ctx.Visible = not ctx.Visible
-        elseif inp.UserInputType == Enum.UserInputType.MouseButton1 then
-            if ctx.Visible then
-                task.delay(0.1, function() ctx.Visible = false end)
-            end
-        end
-    end)
-
-    return ctx
-end
-local contextMenu = createContextMenu()
-
-local function createWatermark()
-    local wm = Instance.new("Frame")
-    wm.Name = "Watermark"
-    wm.Size = UDim2.new(0, 0, 0, 16)
-    wm.AutomaticSize = Enum.AutomaticSize.X
-    wm.Position = UDim2.new(0.5, 0, 0, 4)
-    wm.AnchorPoint = Vector2.new(0.5, 0)
-    wm.BackgroundColor3 = BG
-    wm.BackgroundTransparency = 0.25
-    wm.BorderSizePixel = 0
-    wm.Parent = ScreenGui
-    mkCorner(wm, 3)
-    mkStroke(wm, ACCENT, 1)
-    mkPad(wm, 0, 0, 6, 6)
-
-    local wmLayout = Instance.new("UIListLayout")
-    wmLayout.FillDirection = Enum.FillDirection.Horizontal
-    wmLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    wmLayout.Padding = UDim.new(0, 6)
-    wmLayout.Parent = wm
-
-    local nameL = mkLabel(wm, "AlienV4", 9, ACCENT, Enum.Font.GothamBold)
-    nameL.Size = UDim2.new(0, 0, 1, 0)
-    nameL.AutomaticSize = Enum.AutomaticSize.X
-
-    local sepL = mkLabel(wm, "|", 9, BORDER, Enum.Font.Gotham)
-    sepL.Size = UDim2.new(0, 4, 1, 0)
-
-    local userL = mkLabel(wm, LocalPlayer.DisplayName, 9, TEXT_DIM, Enum.Font.Gotham)
-    userL.Size = UDim2.new(0, 0, 1, 0)
-    userL.AutomaticSize = Enum.AutomaticSize.X
-
-    local sep2L = mkLabel(wm, "|", 9, BORDER, Enum.Font.Gotham)
-    sep2L.Size = UDim2.new(0, 4, 1, 0)
-
-    local fpsWmL = mkLabel(wm, "60fps", 9, TEXT_OFF, Enum.Font.Gotham)
-    fpsWmL.Size = UDim2.new(0, 0, 1, 0)
-    fpsWmL.AutomaticSize = Enum.AutomaticSize.X
-
-    RunService.Heartbeat:Connect(function()
-        fpsWmL.Text = lastFPS .. "fps"
-        local fpsOk = lastFPS >= 50
-        fpsWmL.TextColor3 = fpsOk and ACCENT or RED
-    end)
-
-    return wm
-end
-createWatermark()
-
 local function createPlayerList()
-    local plPanel = createBaseFrame("PlayerListPanel")
-    plPanel.Size = UDim2.fromOffset(100, 160)
-    plPanel.Position = UDim2.new(1, -110, 0.5, -80)
-    plPanel.Parent = ScreenGui
-    plPanel.Visible = false
+    local plFrame = createBaseFrame("PlayerList", 100, 200)
+    plFrame.Position = UDim2.new(1, -110, 0.5, -100)
+    plFrame.ZIndex = BASE_ZINDEX + 20
+    plFrame.Parent = ScreenGui
 
-    local plTitle = createTitleBar(plPanel, "玩家列表", BLUE)
-    local plScroll = createScrollContent(plPanel)
-    setCollapseLogic(plTitle, plScroll, plPanel)
+    local plTitle = createTitleBar(plFrame, "玩家列表", BLUE)
+    plTitle.ZIndex = BASE_ZINDEX + 21
+    local plScroll = createScrollContent(plFrame)
+    plScroll.ZIndex = BASE_ZINDEX + 21
+    setCollapseLogic(plTitle, plScroll, plFrame, BAR_HEIGHT, 200)
+    makeDraggable(plFrame, plTitle)
 
-    local function refreshPlayerList()
+    local function refreshList()
         for _, c in pairs(plScroll:GetChildren()) do
             if not c:IsA("UIListLayout") then c:Destroy() end
         end
         for _, plr in ipairs(Players:GetPlayers()) do
+            local isLocal = plr == LocalPlayer
             local pRow = Instance.new("Frame")
             pRow.Size = UDim2.new(1, 0, 0, 20)
             pRow.BackgroundTransparency = 1
             pRow.BorderSizePixel = 0
+            pRow.ZIndex = BASE_ZINDEX + 22
             pRow.Parent = plScroll
 
-            local isLocal = plr == LocalPlayer
             local nameLbl = mkLabel(pRow, plr.DisplayName, 8, isLocal and ACCENT or TEXT_DIM, Enum.Font.Gotham)
-            nameLbl.Size = UDim2.new(0.75, 0, 1, 0)
+            nameLbl.Size = UDim2.new(0.72, 0, 1, 0)
             nameLbl.Position = UDim2.new(0, 4, 0, 0)
+            nameLbl.ZIndex = BASE_ZINDEX + 23
 
             if not isLocal then
                 local tpBtn = Instance.new("TextButton")
-                tpBtn.Size = UDim2.new(0.25, -4, 0, 14)
-                tpBtn.Position = UDim2.new(0.75, 0, 0.5, -7)
+                tpBtn.Size = UDim2.new(0.28, -4, 0, 14)
+                tpBtn.Position = UDim2.new(0.72, 0, 0.5, -7)
                 tpBtn.BackgroundColor3 = BG2
                 tpBtn.BackgroundTransparency = 0.2
                 tpBtn.Text = "TP"
@@ -1639,6 +1598,7 @@ local function createPlayerList()
                 tpBtn.TextColor3 = ACCENT
                 tpBtn.BorderSizePixel = 0
                 tpBtn.AutoButtonColor = false
+                tpBtn.ZIndex = BASE_ZINDEX + 23
                 tpBtn.Parent = pRow
                 mkCorner(tpBtn, 2)
                 tpBtn.MouseButton1Click:Connect(function()
@@ -1655,20 +1615,50 @@ local function createPlayerList()
         end
     end
 
-    refreshPlayerList()
-    Players.PlayerAdded:Connect(refreshPlayerList)
-    Players.PlayerRemoving:Connect(function()
-        task.delay(0.5, refreshPlayerList)
-    end)
+    refreshList()
+    Players.PlayerAdded:Connect(refreshList)
+    Players.PlayerRemoving:Connect(function() task.delay(0.5, refreshList) end)
 
+    createSeparatorLine(MainScroll)
     createCategoryToggle(MainScroll, "玩家列表", function(state)
-        plPanel.Visible = state
+        plFrame.Visible = state
     end)
 
-    return plPanel
+    return plFrame
 end
 createPlayerList()
 
-task.delay(1, function()
-    pushNotif("提示", "点击左侧按钮开启菜单", "info", 5)
+UserInputService.InputBegan:Connect(function(inp, gpe)
+    if gpe then return end
+    if ListeningKeybind then return end
+    if inp.KeyCode == KeybindValues["显示/隐藏UI"] then
+        local showing = not MainFrame.Visible
+        MainFrame.Visible = showing
+        tw(MainButton, {TextColor3 = showing and ACCENT or TEXT_DIM}, 0.15)
+        accentDot.BackgroundColor3 = showing and ACCENT or TEXT_OFF
+    elseif inp.KeyCode == KeybindValues["紧急关闭"] then
+        for k in pairs(FeatureStates) do FeatureStates[k] = false end
+        updateStatusPanel()
+        pushNotif("紧急关闭", "所有功能已停用", "error", 3)
+        MainFrame.Visible = false
+    elseif inp.KeyCode == KeybindValues["飞行按键"] then
+        FeatureStates["飞行模式"] = not FeatureStates["飞行模式"]
+        updateStatusPanel()
+    elseif inp.KeyCode == KeybindValues["自瞄按键"] then
+        FeatureStates["自瞄锁定"] = not FeatureStates["自瞄锁定"]
+        updateStatusPanel()
+    elseif inp.KeyCode == KeybindValues["设置面板键"] then
+        SettingsFrame.Visible = not SettingsFrame.Visible
+    end
 end)
+
+Players.PlayerAdded:Connect(function(plr)
+    pushNotif("玩家加入", plr.DisplayName .. " 加入了游戏", "info", 3)
+end)
+Players.PlayerRemoving:Connect(function(plr)
+    pushNotif("玩家离开", plr.DisplayName .. " 离开了游戏", "warn", 3)
+end)
+
+initDragging()
+updateStatusPanel()
+pushNotif("AlienV4 v2", "已成功加载", "info", 4)
