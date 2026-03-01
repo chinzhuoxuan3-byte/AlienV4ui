@@ -238,7 +238,6 @@ function AlienV4:CreateWindow(options)
 		Size = UDim2.new(1, 0, 0, 20),
 		Position = UDim2.new(0, 0, 0, 0),
 		TextXAlignment = Enum.TextXAlignment.Center,
-		LetterSpacing = 2,
 		Parent = categoryList,
 	})
 
@@ -457,7 +456,6 @@ function AlienV4:CreateWindow(options)
 				Size = UDim2.new(1, -10, 1, 0),
 				Position = UDim2.new(0, 8, 0, 0),
 				TextXAlignment = Enum.TextXAlignment.Left,
-				LetterSpacing = 1,
 				Parent = sectionHeader,
 			})
 
