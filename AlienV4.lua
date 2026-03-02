@@ -827,13 +827,17 @@ makeDraggable(MainFrame, MainTitle)
 
 RunService.RenderStepped:Connect(function()
     if MainFrame.Visible then
-        local baseX = MainFrame.AbsolutePosition.X + UI_WIDTH + 4
-        local baseY = MainFrame.AbsolutePosition.Y
+        local mainPos = MainFrame.Position
         for i, name in ipairs(ActiveSubUIs) do
             local sub = SubUIFrames[name]
             if sub then
                 sub.Visible = true
-                sub.Position = UDim2.new(0, baseX + (i - 1) * (UI_WIDTH + 4), 0, baseY)
+                sub.Position = UDim2.new(
+                    mainPos.X.Scale,
+                    mainPos.X.Offset + i * (UI_WIDTH + 4),
+                    mainPos.Y.Scale,
+                    mainPos.Y.Offset
+                )
             end
         end
     else
