@@ -12,7 +12,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AlienV4_Vape"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 999999999
+ScreenGui.DisplayOrder = 999999999999999
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = PlayerGui
 
@@ -546,14 +546,12 @@ local function createDropdownItem(parent, name, options, default, callback)
     mkStroke(ddBtn, BORDER, 1)
 
     local listFrame = Instance.new("Frame")
-    listFrame.Size = UDim2.new(0.56, -3, 0, 0)
-    listFrame.Position = UDim2.new(0.44, 0, 1, 0)
     listFrame.BackgroundColor3 = BG2
     listFrame.BackgroundTransparency = 0.1
     listFrame.BorderSizePixel = 0
     listFrame.Visible = false
-    listFrame.ZIndex = BASE_ZINDEX + 10
-    listFrame.Parent = wrapper
+    listFrame.ZIndex = 9e9 - 1
+    listFrame.Parent = ScreenGui
     mkCorner(listFrame, 2)
     mkStroke(listFrame, BORDER, 1)
     mkList(listFrame)
@@ -573,7 +571,7 @@ local function createDropdownItem(parent, name, options, default, callback)
             ob.TextColor3 = TEXT_WHITE
             ob.BorderSizePixel = 0
             ob.AutoButtonColor = false
-            ob.ZIndex = BASE_ZINDEX + 11
+            ob.ZIndex = 9e9
             ob.Parent = listFrame
             ob.MouseButton1Click:Connect(function()
                 DropdownValues[name] = opt
@@ -583,14 +581,28 @@ local function createDropdownItem(parent, name, options, default, callback)
                 if callback then pcall(callback, opt) end
             end)
         end
-        listFrame.Size = UDim2.new(0.56, -3, 0, #options * 14)
+        local itemCount = #options
+        listFrame.Size = UDim2.fromOffset(ddBtn.AbsoluteSize.X, itemCount * 14)
     end
     buildDropList()
 
     local open = false
     ddBtn.MouseButton1Click:Connect(function()
         open = not open
+        if open then
+            local absPos = ddBtn.AbsolutePosition
+            local absSize = ddBtn.AbsoluteSize
+            local itemCount = #options
+            listFrame.Size = UDim2.fromOffset(absSize.X, itemCount * 14)
+            listFrame.Position = UDim2.fromOffset(absPos.X, absPos.Y + absSize.Y)
+        end
         listFrame.Visible = open
+    end)
+
+    wrapper.AncestryChanged:Connect(function()
+        if not wrapper.Parent then
+            listFrame:Destroy()
+        end
     end)
 
     return wrapper
@@ -1666,3 +1678,33 @@ end)
 initDragging()
 updateStatusPanel()
 pushNotif("AlienV4 v2", "已成功加载", "info", 4)
+
+return {
+    FeatureStates    = FeatureStates,
+    FeatureCallbacks = FeatureCallbacks,
+    SliderValues     = SliderValues,
+    DropdownValues   = DropdownValues,
+    TextValues       = TextValues,
+    KeybindValues    = KeybindValues,
+    ColorValues      = ColorValues,
+    CategoryStates   = CategoryStates,
+    Settings         = Settings,
+    MainFrame        = MainFrame,
+    MainScroll       = MainScroll,
+    SubUIFrames      = SubUIFrames,
+    ActiveSubUIs     = ActiveSubUIs,
+    pushNotif             = pushNotif,
+    createSubWindow       = createSubWindow,
+    toggleSubUI           = toggleSubUI,
+    createCategoryToggle  = createCategoryToggle,
+    createCategoryHeader  = createCategoryHeader,
+    createFeatureToggle   = createFeatureToggle,
+    createSliderItem      = createSliderItem,
+    createDropdownItem    = createDropdownItem,
+    createKeybindItem     = createKeybindItem,
+    createTextInputItem   = createTextInputItem,
+    createColorItem       = createColorItem,
+    createLabelItem       = createLabelItem,
+    createValueDisplayItem = createValueDisplayItem,
+    createSeparatorLine   = createSeparatorLine,
+}
