@@ -158,10 +158,31 @@ function library.new(library, name, theme)
     TitleLabel.Size = UDim2.new(1, -10, 0, 22)
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.Text = name or "XA Hub"
-    TitleLabel.TextColor3 = ACCENT
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     TitleLabel.TextSize = 15
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.ZIndex = 4
+
+    local TitleGradient = Instance.new("UIGradient")
+    TitleGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 80,  80)),
+        ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 180, 50)),
+        ColorSequenceKeypoint.new(0.33, Color3.fromRGB(80,  255, 120)),
+        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(50,  200, 255)),
+        ColorSequenceKeypoint.new(0.67, Color3.fromRGB(140, 80,  255)),
+        ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 80,  200)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 80,  80)),
+    }
+    TitleGradient.Parent = TitleLabel
+
+    task.spawn(function()
+        local r = 0
+        while TitleLabel and TitleLabel.Parent do
+            r = (r + 1) % 360
+            TitleGradient.Rotation = r
+            task.wait(1/60)
+        end
+    end)
 
     local Divider = Instance.new("Frame")
     Divider.Parent = Sidebar
