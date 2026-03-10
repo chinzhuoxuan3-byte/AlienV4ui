@@ -395,21 +395,22 @@ function library.new(library, name, theme)
         TabBtns.CanvasSize = UDim2.new(0, 0, 0, TabBtnsL.AbsoluteContentSize.Y + 18)
     end)
 
-    local Open = Instance.new("ImageButton")
+    local Open = Instance.new("TextButton")
     local REN = Instance.new("UICorner")
 
     Open.Name = "Open"
     Open.Parent = dogent
     Open.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-    Open.BackgroundTransparency = 0.000
-    Open.Position = UDim2.new(0.00829315186, 0, 0.31107837, 0)
-    Open.Size = UDim2.new(0, 48, 0, 48)
+    Open.BackgroundTransparency = 0.35
+    Open.Position = UDim2.new(0.00829315186, 0, 0.05, 0)
+    Open.Size = UDim2.new(0, 110, 0, 44)
     Open.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Open.BorderSizePixel = 0
-    Open.Image = "rbxassetid://3926305904"
-    Open.ImageTransparency = 0.000
-    Open.ImageColor3 = Color3.fromRGB(200, 215, 240)
-    Open.ScaleType = Enum.ScaleType.Fit
+    Open.AutoButtonColor = false
+    Open.Font = Enum.Font.GothamBold
+    Open.Text = "打开UI"
+    Open.TextColor3 = Color3.fromRGB(50, 180, 255)
+    Open.TextSize = 22
     Open.Active = true
     Open.Draggable = true
 
@@ -427,23 +428,15 @@ function library.new(library, name, theme)
         TweenService:Create(Open, TweenInfo.new(0.05), {Position = startPos}):Play()
     end
 
-    local function spawnParticles()
-        local Particle = Instance.new("ParticleEmitter")
-        Particle.Parent = Open
-        Particle.Texture = "rbxassetid://154966924"
-        Particle.Lifetime = NumberRange.new(0.3, 0.5)
-        Particle.Speed = NumberRange.new(10, 20)
-        Particle.SpreadAngle = Vector2.new(360, 360)
-        Particle.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0)})
-        Particle.Enabled = true
-        task.wait(0.5)
-        Particle:Destroy()
-    end
 
     Open.MouseButton1Click:Connect(function()
         Main.Visible = not Main.Visible
         shake()
-        spawnParticles()
+        if Main.Visible then
+            Open.Text = "关闭UI"
+        else
+            Open.Text = "打开UI"
+        end
     end)
 
     local window = {}
