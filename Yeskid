@@ -1,4 +1,4 @@
---制作来自Yeskid
+--来自Yeskid制作的ui
 repeat task.wait() until game:IsLoaded()
 local library = {}
 local ToggleUI = false
@@ -98,15 +98,15 @@ function library.new(library, name, theme)
         if v.Name == "frosty" then v:Destroy() end
     end
     if theme == 'dark' then
-        MainColor    = Color3.fromRGB(18, 22, 30)
-        Background   = Color3.fromRGB(18, 22, 30)
-        zyColor      = Color3.fromRGB(24, 29, 40)
-        beijingColor = Color3.fromRGB(50, 60, 80)
+        MainColor    = Color3.fromRGB(48, 56, 76)
+        Background   = Color3.fromRGB(48, 56, 76)
+        zyColor      = Color3.fromRGB(60, 70, 95)
+        beijingColor = Color3.fromRGB(90, 108, 145)
     else
-        MainColor    = Color3.fromRGB(18, 22, 30)
-        Background   = Color3.fromRGB(18, 22, 30)
-        zyColor      = Color3.fromRGB(24, 29, 40)
-        beijingColor = Color3.fromRGB(50, 60, 80)
+        MainColor    = Color3.fromRGB(48, 56, 76)
+        Background   = Color3.fromRGB(48, 56, 76)
+        zyColor      = Color3.fromRGB(60, 70, 95)
+        beijingColor = Color3.fromRGB(90, 108, 145)
     end
 
     local dogent           = Instance.new("ScreenGui")
@@ -235,8 +235,8 @@ function library.new(library, name, theme)
 
     SB.Name = "SB"
     SB.Parent = Main
-    SB.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-    SB.BorderColor3 = Color3.fromRGB(14, 18, 26)
+    SB.BackgroundColor3 = Color3.fromRGB(38, 46, 64)
+    SB.BorderColor3 = Color3.fromRGB(38, 46, 64)
     SB.Size = UDim2.new(0, 8, 0, 353)
 
     SBC.CornerRadius = UDim.new(0, 6)
@@ -245,16 +245,16 @@ function library.new(library, name, theme)
 
     Side.Name = "Side"
     Side.Parent = SB
-    Side.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-    Side.BorderColor3 = Color3.fromRGB(14, 18, 26)
+    Side.BackgroundColor3 = Color3.fromRGB(38, 46, 64)
+    Side.BorderColor3 = Color3.fromRGB(38, 46, 64)
     Side.BorderSizePixel = 0
     Side.ClipsDescendants = true
     Side.Position = UDim2.new(1, 0, 0, 0)
     Side.Size = UDim2.new(0, 110, 0, 353)
 
     SideG.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(14, 18, 26)),
-        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(14, 18, 26))
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(38, 46, 64)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(38, 46, 64))
     }
     SideG.Rotation = 90
     SideG.Name = "SideG"
@@ -385,8 +385,8 @@ function library.new(library, name, theme)
     coroutine.wrap(NPLHKB_fake_script)()
 
     SBG.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(14, 18, 26)),
-        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(14, 18, 26))
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(38, 46, 64)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(38, 46, 64))
     }
     SBG.Rotation = 90
     SBG.Name = "SBG"
@@ -401,7 +401,7 @@ function library.new(library, name, theme)
 
     Open.Name = "Open"
     Open.Parent = dogent
-    Open.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
+    Open.BackgroundColor3 = Color3.fromRGB(48, 58, 82)
     Open.BackgroundTransparency = 0.35
     Open.Position = UDim2.new(0.00829315186, 0, 0.05, 0)
     Open.Size = UDim2.new(0, 110, 0, 44)
@@ -516,6 +516,7 @@ function library.new(library, name, theme)
             local SectionOpen   = Instance.new("ImageLabel")
             local SectionOpened = Instance.new("ImageLabel")
             local SectionToggle = Instance.new("ImageButton")
+            local SectionPM     = Instance.new("TextLabel")
             local Objs          = Instance.new("Frame")
             local ObjsL         = Instance.new("UIListLayout")
 
@@ -567,6 +568,18 @@ function library.new(library, name, theme)
             SectionToggle.BorderSizePixel = 0
             SectionToggle.Size = UDim2.new(0, 26, 0, 26)
 
+            SectionPM.Name = "SectionPM"
+            SectionPM.Parent = Section
+            SectionPM.BackgroundTransparency = 1
+            SectionPM.AnchorPoint = Vector2.new(1, 0.5)
+            SectionPM.Position = UDim2.new(1, -10, 0.5, 0)
+            SectionPM.Size = UDim2.new(0, 20, 0, 36)
+            SectionPM.Font = Enum.Font.GothamBold
+            SectionPM.TextColor3 = Color3.fromRGB(130, 170, 220)
+            SectionPM.TextSize = 22
+            SectionPM.TextXAlignment = Enum.TextXAlignment.Right
+            SectionPM.TextYAlignment = Enum.TextYAlignment.Center
+
             Objs.Name = "Objs"
             Objs.Parent = Section
             Objs.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -585,6 +598,9 @@ function library.new(library, name, theme)
                 Section.Size = UDim2.new(0.981000006, 0, 0, open and 36 + ObjsL.AbsoluteContentSize.Y + 8 or 36)
                 SectionOpened.ImageTransparency = (open and 0 or 1)
                 SectionOpen.ImageTransparency = (open and 1 or 0)
+                SectionPM.Text = (open and "-" or "+")
+            else
+                SectionPM.Text = "+"
             end
 
             SectionToggle.MouseButton1Click:Connect(function()
@@ -592,6 +608,7 @@ function library.new(library, name, theme)
                 Section.Size = UDim2.new(0.981000006, 0, 0, open and 36 + ObjsL.AbsoluteContentSize.Y + 8 or 36)
                 SectionOpened.ImageTransparency = (open and 0 or 1)
                 SectionOpen.ImageTransparency = (open and 1 or 0)
+                SectionPM.Text = (open and "-" or "+")
             end)
 
             ObjsL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
