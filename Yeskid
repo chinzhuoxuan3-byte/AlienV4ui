@@ -1,4 +1,3 @@
---制作来自史上最强Yeskid
 repeat task.wait() until game:IsLoaded()
 local library = {}
 local ToggleUI = false
@@ -602,7 +601,7 @@ function library.new(library, name, theme)
 
             local section = {}
 
-            function section.Button(section, text, callback)
+            function section.Button(section, text, callback, order)
                 local callback = callback or function() end
                 local BtnModule = Instance.new("Frame")
                 local Btn       = Instance.new("TextButton")
@@ -615,6 +614,7 @@ function library.new(library, name, theme)
                 BtnModule.BorderSizePixel = 0
                 BtnModule.Position = UDim2.new(0, 0, 0, 0)
                 BtnModule.Size = UDim2.new(0, 428, 0, 38)
+                BtnModule.LayoutOrder = order or 0
 
                 Btn.Name = "Btn"
                 Btn.Parent = BtnModule
@@ -639,7 +639,7 @@ function library.new(library, name, theme)
                 return BtnModule
             end
 
-            function section:Label(text)
+            function section:Label(text, order)
                 local LabelModule = Instance.new("Frame")
                 local TextLabel   = Instance.new("TextLabel")
                 local LabelC      = Instance.new("UICorner")
@@ -651,6 +651,7 @@ function library.new(library, name, theme)
                 LabelModule.BorderSizePixel = 0
                 LabelModule.Position = UDim2.new(0, 0, NAN, 0)
                 LabelModule.Size = UDim2.new(0, 428, 0, 19)
+                LabelModule.LayoutOrder = order or 0
 
                 TextLabel.Parent = LabelModule
                 TextLabel.BackgroundColor3 = zyColor
