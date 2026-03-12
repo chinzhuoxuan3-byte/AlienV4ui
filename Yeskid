@@ -1,4 +1,4 @@
---来自Yeskid制作的ui
+--制作来自史上最强Yeskid
 repeat task.wait() until game:IsLoaded()
 local library = {}
 local ToggleUI = false
@@ -516,7 +516,6 @@ function library.new(library, name, theme)
             local SectionOpen   = Instance.new("ImageLabel")
             local SectionOpened = Instance.new("ImageLabel")
             local SectionToggle = Instance.new("ImageButton")
-            local SectionPM     = Instance.new("TextLabel")
             local Objs          = Instance.new("Frame")
             local ObjsL         = Instance.new("UIListLayout")
 
@@ -568,17 +567,6 @@ function library.new(library, name, theme)
             SectionToggle.BorderSizePixel = 0
             SectionToggle.Size = UDim2.new(0, 26, 0, 26)
 
-            SectionPM.Name = "SectionPM"
-            SectionPM.Parent = Section
-            SectionPM.BackgroundTransparency = 1
-            SectionPM.AnchorPoint = Vector2.new(1, 0.5)
-            SectionPM.Position = UDim2.new(1, -10, 0.5, 0)
-            SectionPM.Size = UDim2.new(0, 20, 0, 36)
-            SectionPM.Font = Enum.Font.GothamBold
-            SectionPM.TextColor3 = Color3.fromRGB(130, 170, 220)
-            SectionPM.TextSize = 22
-            SectionPM.TextXAlignment = Enum.TextXAlignment.Right
-            SectionPM.TextYAlignment = Enum.TextYAlignment.Center
 
             Objs.Name = "Objs"
             Objs.Parent = Section
@@ -598,9 +586,6 @@ function library.new(library, name, theme)
                 Section.Size = UDim2.new(0.981000006, 0, 0, open and 36 + ObjsL.AbsoluteContentSize.Y + 8 or 36)
                 SectionOpened.ImageTransparency = (open and 0 or 1)
                 SectionOpen.ImageTransparency = (open and 1 or 0)
-                SectionPM.Text = (open and "-" or "+")
-            else
-                SectionPM.Text = "+"
             end
 
             SectionToggle.MouseButton1Click:Connect(function()
@@ -608,7 +593,6 @@ function library.new(library, name, theme)
                 Section.Size = UDim2.new(0.981000006, 0, 0, open and 36 + ObjsL.AbsoluteContentSize.Y + 8 or 36)
                 SectionOpened.ImageTransparency = (open and 0 or 1)
                 SectionOpen.ImageTransparency = (open and 1 or 0)
-                SectionPM.Text = (open and "-" or "+")
             end)
 
             ObjsL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -652,6 +636,7 @@ function library.new(library, name, theme)
                     spawn(function() Ripple(Btn) end)
                     spawn(callback)
                 end)
+                return BtnModule
             end
 
             function section:Label(text)
