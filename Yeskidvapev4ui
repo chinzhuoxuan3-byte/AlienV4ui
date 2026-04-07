@@ -1,0 +1,1644 @@
+ui_library_code = '''repeat task.wait() until game:IsLoaded()
+
+local JackalUI = {}
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = workspace.CurrentCamera
+
+local UIInjected = true
+local MainGui = nil
+local MainRescale = nil
+local MainBlur = nil
+local ObjectsThatCanBeSaved = {}
+local CurrentTheme = {Hue = 0.44, Sat = 0.9, Val = 1}
+local RainbowEnabled = false
+local RainbowSpeed = 0.5
+local ToggleTooltips = true
+local NotificationsEnabled = true
+
+local function CreateInstance(className, properties)
+    local instance = Instance.new(className)
+    for prop, value in pairs(properties or {}) do
+        instance[prop] = value
+    end
+    return instance
+end
+
+local function CreateTween(instance, properties, duration, style, direction)
+    local tween = TweenService:Create(instance, TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.InOut), properties)
+    return tween
+end
+
+local function GetTextSize(text, fontSize, font)
+    return TextService:GetTextSize(text, fontSize, font or Enum.Font.SourceSans, Vector2.new(99999, 99999))
+end
+
+local function GetVapeSaturation(val)
+    local sat = 0.9
+    if val < 0.03 then 
+        sat = 0.75 + (0.15 * math.clamp(val / 0.03, 0, 1))
+    end
+    if val > 0.59 then 
+        sat = 0.9 - (0.4 * math.clamp((val - 0.59) / 0.07, 0, 1))
+    end
+    if val > 0.68 then 
+        sat = 0.5 + (0.4 * math.clamp((val - 0.68) / 0.14, 0, 1))
+    end
+    if val > 0.89 then 
+        sat = 0.9 - (0.15 * math.clamp((val - 0.89) / 0.1, 0, 1))
+    end
+    return sat
+end
+
+local function GetRainbowColor(offset)
+    local hue = (CurrentTheme.Hue + offset) % 1
+    local sat = RainbowEnabled and GetVapeSaturation(hue) or CurrentTheme.Sat
+    local val = RainbowEnabled and 1 or CurrentTheme.Val
+    return Color3.fromHSV(hue, sat, val)
+end
+
+function JackalUI.CreateNotification(title, text, duration, icon)
+    if not NotificationsEnabled then return nil end
+    duration = duration or 5
+    
+    local notifFrame = CreateInstance("Frame", {
+        Size = UDim2.new(0, 280, 0, 70),
+        Position = UDim2.new(1, 300, 0, 100),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        BorderSizePixel = 0,
+        Parent = MainGui.ScaledGui.Notifications
+    })
+    
+    local corner = CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = notifFrame})
+    
+    local shadow = CreateInstance("ImageLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(1, 6, 1, 6),
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = Color3.new(),
+        ImageTransparency = 0.6,
+        BackgroundTransparency = 1,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = Rect.new(10, 10, 118, 118),
+        ZIndex = -1,
+        Parent = notifFrame
+    })
+    
+    local iconImg = CreateInstance("ImageLabel", {
+        Size = UDim2.new(0, 40, 0, 40),
+        Position = UDim2.new(0, 10, 0, 15),
+        BackgroundTransparency = 1,
+        Image = icon or "",
+        ImageColor3 = GetRainbowColor(0),
+        Parent = notifFrame
+    })
+    
+    local titleLabel = CreateInstance("TextLabel", {
+        Size = UDim2.new(0, 200, 0, 20),
+        Position = UDim2.new(0, 60, 0, 10),
+        BackgroundTransparency = 1,
+        Text = title,
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        TextSize = 16,
+        Font = Enum.Font.SourceSansBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = notifFrame
+    })
+    
+    local textLabel = CreateInstance("TextLabel", {
+        Size = UDim2.new(0, 200, 0, 40),
+        Position = UDim2.new(0, 60, 0, 30),
+        BackgroundTransparency = 1,
+        Text = text,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 14,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextWrapped = true,
+        Parent = notifFrame
+    })
+    
+    local progressBar = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 2),
+        Position = UDim2.new(0, 0, 1, -2),
+        BackgroundColor3 = GetRainbowColor(0),
+        BorderSizePixel = 0,
+        Parent = notifFrame
+    })
+    
+    CreateTween(notifFrame, {Position = UDim2.new(1, -300, 0, 100)}, 0.3):Play()
+    CreateTween(progressBar, {Size = UDim2.new(0, 0, 0, 2)}, duration):Play()
+    
+    task.delay(duration, function()
+        CreateTween(notifFrame, {Position = UDim2.new(1, 300, 0, 100)}, 0.3):Play()
+        task.wait(0.3)
+        notifFrame:Destroy()
+    end)
+    
+    return {Frame = notifFrame}
+end
+
+function JackalUI.CreateMainWindow()
+    MainGui = CreateInstance("ScreenGui", {
+        Name = "JackalUI",
+        Parent = CoreGui,
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    })
+    
+    MainRescale = CreateInstance("UIScale", {Scale = 1, Parent = MainGui})
+    
+    local scaledGui = CreateInstance("Frame", {
+        Name = "ScaledGui",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Parent = MainGui
+    })
+    
+    local blur = CreateInstance("BlurEffect", {Size = 0, Parent = Camera})
+    MainBlur = blur
+    
+    local clickGui = CreateInstance("Frame", {
+        Name = "ClickGui",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Visible = false,
+        Parent = scaledGui
+    })
+    
+    local notifications = CreateInstance("Frame", {
+        Name = "Notifications",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Parent = scaledGui
+    })
+    
+    local mainWindow = CreateInstance("Frame", {
+        Name = "MainWindow",
+        Size = UDim2.new(0, 200, 0, 400),
+        Position = UDim2.new(0, 6, 0, 6),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        BorderSizePixel = 0,
+        Parent = clickGui
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = mainWindow})
+    
+    local mainShadow = CreateInstance("ImageLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(1, 6, 1, 6),
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = Color3.new(),
+        ImageTransparency = 0.6,
+        BackgroundTransparency = 1,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = Rect.new(10, 10, 118, 118),
+        ZIndex = -1,
+        Parent = mainWindow
+    })
+    
+    local logoFrame = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = mainWindow
+    })
+    
+    local logo1 = CreateInstance("TextLabel", {
+        Name = "Logo1",
+        Size = UDim2.new(0, 100, 0, 30),
+        Position = UDim2.new(0, 10, 0, 5),
+        BackgroundTransparency = 1,
+        Text = "Jackal",
+        TextColor3 = GetRainbowColor(0),
+        TextSize = 24,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = logoFrame
+    })
+    
+    local logo2 = CreateInstance("TextLabel", {
+        Name = "Logo2",
+        Size = UDim2.new(0, 50, 0, 20),
+        Position = UDim2.new(0, 85, 0, 10),
+        BackgroundTransparency = 1,
+        Text = "v1.0",
+        TextColor3 = Color3.fromRGB(137, 136, 137),
+        TextSize = 14,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = logoFrame
+    })
+    
+    local topBar = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 0, 40),
+        BackgroundColor3 = Color3.fromRGB(40, 39, 40),
+        BorderSizePixel = 0,
+        Parent = mainWindow
+    })
+    
+    local buttonContainer = CreateInstance("Frame", {
+        Name = "ButtonContainer",
+        Size = UDim2.new(1, 0, 1, -50),
+        Position = UDim2.new(0, 0, 0, 50),
+        BackgroundTransparency = 1,
+        Parent = mainWindow
+    })
+    
+    CreateInstance("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 2),
+        Parent = buttonContainer
+    })
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    logoFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainWindow.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            mainWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local api = {
+        Object = mainWindow,
+        ButtonContainer = buttonContainer,
+        Type = "MainWindow",
+        SortOrder = 1
+    }
+    
+    ObjectsThatCanBeSaved["MainWindow"] = api
+    return api
+end
+
+function JackalUI.CreateWindow(config)
+    config = config or {}
+    local name = config.Name or "Window"
+    local icon = config.Icon
+    local iconSize = config.IconSize or 16
+    
+    local window = CreateInstance("Frame", {
+        Name = name.."Window",
+        Size = UDim2.new(0, 200, 0, 300),
+        Position = UDim2.new(0, 223, 0, 6),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        BorderSizePixel = 0,
+        Visible = false,
+        Parent = MainGui.ScaledGui.ClickGui
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = window})
+    
+    local shadow = CreateInstance("ImageLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(1, 6, 1, 6),
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = Color3.new(),
+        ImageTransparency = 0.6,
+        BackgroundTransparency = 1,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = Rect.new(10, 10, 118, 118),
+        ZIndex = -1,
+        Parent = window
+    })
+    
+    local header = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 35),
+        BackgroundTransparency = 1,
+        Parent = window
+    })
+    
+    if icon then
+        local iconImg = CreateInstance("ImageLabel", {
+            Size = UDim2.new(0, iconSize, 0, iconSize),
+            Position = UDim2.new(0, 10, 0, (35 - iconSize) / 2),
+            BackgroundTransparency = 1,
+            Image = icon,
+            ImageColor3 = Color3.fromRGB(200, 200, 200),
+            Parent = header
+        })
+    end
+    
+    local title = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -40, 0, 35),
+        Position = UDim2.new(0, icon and 35 or 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        TextSize = 17,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = header
+    })
+    
+    local topBar = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 0, 35),
+        BackgroundColor3 = Color3.fromRGB(40, 39, 40),
+        BorderSizePixel = 0,
+        Parent = window
+    })
+    
+    local content = CreateInstance("Frame", {
+        Name = "Content",
+        Size = UDim2.new(1, -10, 1, -45),
+        Position = UDim2.new(0, 5, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = window
+    })
+    
+    CreateInstance("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 3),
+        Parent = content
+    })
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = window.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local api = {
+        Object = window,
+        Content = content,
+        Name = name,
+        Type = "Window",
+        SetVisible = function(visible) window.Visible = visible end,
+        SortOrder = #ObjectsThatCanBeSaved + 1
+    }
+    
+    ObjectsThatCanBeSaved[name.."Window"] = api
+    return api
+end
+
+function JackalUI.CreateButton(config)
+    config = config or {}
+    local parent = config.Parent or ObjectsThatCanBeSaved["MainWindow"].ButtonContainer
+    local name = config.Name or "Button"
+    local callback = config.Function or function() end
+    local icon = config.Icon
+    local iconSize = config.IconSize or 16
+    
+    local button = CreateInstance("TextButton", {
+        Name = name.."Button",
+        Size = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        AutoButtonColor = false,
+        Text = "",
+        Parent = parent
+    })
+    
+    local stroke = CreateInstance("UIStroke", {
+        Color = Color3.fromRGB(38, 37, 38),
+        Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = button
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Name = "ButtonText",
+        Size = UDim2.new(1, icon and -35 or -10, 1, 0),
+        Position = UDim2.new(0, icon and 35 or 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 16,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = button
+    })
+    
+    if icon then
+        local iconImg = CreateInstance("ImageLabel", {
+            Name = "ButtonIcon",
+            Size = UDim2.new(0, iconSize, 0, iconSize),
+            Position = UDim2.new(0, 10, 0, (32 - iconSize) / 2),
+            BackgroundTransparency = 1,
+            Image = icon,
+            ImageColor3 = Color3.fromRGB(162, 162, 162),
+            Parent = button
+        })
+    end
+    
+    local enabled = false
+    local windowObj = nil
+    
+    if config.Window then
+        windowObj = config.Window
+    end
+    
+    button.MouseEnter:Connect(function()
+        CreateTween(button, {BackgroundColor3 = Color3.fromRGB(40, 39, 40)}, 0.1):Play()
+        label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if not enabled then
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(26, 25, 26)}, 0.1):Play()
+            label.TextColor3 = Color3.fromRGB(162, 162, 162)
+        end
+    end)
+    
+    button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}, 0.1):Play()
+            label.TextColor3 = GetRainbowColor(0)
+            if button:FindFirstChild("ButtonIcon") then
+                button.ButtonIcon.ImageColor3 = GetRainbowColor(0)
+            end
+        else
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(26, 25, 26)}, 0.1):Play()
+            label.TextColor3 = Color3.fromRGB(162, 162, 162)
+            if button:FindFirstChild("ButtonIcon") then
+                button.ButtonIcon.ImageColor3 = Color3.fromRGB(162, 162, 162)
+            end
+        end
+        
+        if windowObj then
+            windowObj.SetVisible(enabled)
+        end
+        
+        callback(enabled)
+    end)
+    
+    local api = {
+        Object = button,
+        Name = name,
+        Type = "Button",
+        Enabled = false,
+        ToggleButton = function(state)
+            enabled = state
+            if enabled then
+                button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                label.TextColor3 = GetRainbowColor(0)
+            else
+                button.BackgroundColor3 = Color3.fromRGB(26, 25, 26)
+                label.TextColor3 = Color3.fromRGB(162, 162, 162)
+            end
+            if windowObj then
+                windowObj.SetVisible(enabled)
+            end
+            callback(enabled)
+        end
+    }
+    
+    ObjectsThatCanBeSaved[name.."Button"] = api
+    return api
+end
+
+function JackalUI.CreateDivider(parent, text)
+    parent = parent or ObjectsThatCanBeSaved["MainWindow"].ButtonContainer
+    
+    local divider = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, text and 25 or 10),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    if text then
+        local label = CreateInstance("TextLabel", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Color3.fromRGB(85, 85, 85),
+            TextSize = 14,
+            Font = Enum.Font.SourceSansBold,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = divider
+        })
+    end
+    
+    return divider
+end
+
+function JackalUI.CreateToggle(config)
+    config = config or {}
+    local parent = config.Parent
+    local name = config.Name or "Toggle"
+    local callback = config.Function or function() end
+    local default = config.Default or false
+    local hoverText = config.HoverText
+    
+    local container = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 35),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -50, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = container
+    })
+    
+    local toggleFrame = CreateInstance("Frame", {
+        Name = "ToggleFrame1",
+        Size = UDim2.new(0, 36, 0, 16),
+        Position = UDim2.new(1, -46, 0, 9),
+        BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+        BorderSizePixel = 0,
+        Parent = container
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = toggleFrame})
+    
+    local circle = CreateInstance("Frame", {
+        Size = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(0, 1, 0, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Parent = toggleFrame
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = circle})
+    
+    local enabled = default
+    
+    if enabled then
+        toggleFrame.BackgroundColor3 = GetRainbowColor(0)
+        circle.Position = UDim2.new(0, 21, 0, 1)
+    end
+    
+    local function updateToggle()
+        if enabled then
+            CreateTween(toggleFrame, {BackgroundColor3 = GetRainbowColor(0)}, 0.2):Play()
+            CreateTween(circle, {Position = UDim2.new(0, 21, 0, 1)}, 0.2):Play()
+        else
+            CreateTween(toggleFrame, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2):Play()
+            CreateTween(circle, {Position = UDim2.new(0, 1, 0, 1)}, 0.2):Play()
+        end
+        callback(enabled)
+    end
+    
+    container.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            enabled = not enabled
+            updateToggle()
+        end
+    end)
+    
+    if hoverText and ToggleTooltips then
+        local tooltip = nil
+        container.MouseEnter:Connect(function()
+            tooltip = CreateInstance("TextLabel", {
+                Size = UDim2.new(0, GetTextSize(hoverText, 14).X + 20, 0, 30),
+                Position = UDim2.new(0, container.AbsolutePosition.X + 50, 0, container.AbsolutePosition.Y + 35),
+                BackgroundColor3 = Color3.fromRGB(37, 37, 37),
+                Text = hoverText,
+                TextColor3 = Color3.fromRGB(201, 201, 201),
+                TextSize = 14,
+                Font = Enum.Font.SourceSans,
+                Parent = MainGui.ScaledGui.ClickGui
+            })
+            CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = tooltip})
+        end)
+        container.MouseLeave:Connect(function()
+            if tooltip then
+                tooltip:Destroy()
+                tooltip = nil
+            end
+        end)
+    end
+    
+    local api = {
+        Object = container,
+        Name = name,
+        Type = "Toggle",
+        Enabled = enabled,
+        Toggle = function(state)
+            enabled = state
+            updateToggle()
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.CreateSlider(config)
+    config = config or {}
+    local parent = config.Parent
+    local name = config.Name or "Slider"
+    local min = config.Min or 0
+    local max = config.Max or 100
+    local default = config.Default or min
+    local callback = config.Function or function() end
+    
+    local container = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -60, 0, 20),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = container
+    })
+    
+    local valueLabel = CreateInstance("TextLabel", {
+        Size = UDim2.new(0, 50, 0, 20),
+        Position = UDim2.new(1, -55, 0, 0),
+        BackgroundTransparency = 1,
+        Text = tostring(default),
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        Parent = container
+    })
+    
+    local sliderBg = CreateInstance("Frame", {
+        Name = "Slider",
+        Size = UDim2.new(1, -20, 0, 6),
+        Position = UDim2.new(0, 10, 0, 30),
+        BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+        BorderSizePixel = 0,
+        Parent = container
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = sliderBg})
+    
+    local fill = CreateInstance("Frame", {
+        Name = "FillSlider",
+        Size = UDim2.new((default - min) / (max - min), 0, 1, 0),
+        BackgroundColor3 = GetRainbowColor(0),
+        BorderSizePixel = 0,
+        Parent = sliderBg
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = fill})
+    
+    local button = CreateInstance("ImageButton", {
+        Name = "ButtonSlider",
+        Size = UDim2.new(0, 12, 0, 12),
+        Position = UDim2.new((default - min) / (max - min), -6, 0.5, -6),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = GetRainbowColor(0),
+        Parent = sliderBg
+    })
+    
+    local dragging = false
+    local currentValue = default
+    
+    local function updateSlider(input)
+        local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        local value = math.floor(min + (pos * (max - min)))
+        currentValue = value
+        valueLabel.Text = tostring(value)
+        fill.Size = UDim2.new(pos, 0, 1, 0)
+        button.Position = UDim2.new(pos, -6, 0.5, -6)
+        callback(value)
+    end
+    
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            updateSlider(input)
+            dragging = true
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local api = {
+        Object = container,
+        Name = name,
+        Type = "Slider",
+        Value = currentValue,
+        SetValue = function(val)
+            currentValue = math.clamp(val, min, max)
+            local pos = (currentValue - min) / (max - min)
+            valueLabel.Text = tostring(currentValue)
+            fill.Size = UDim2.new(pos, 0, 1, 0)
+            button.Position = UDim2.new(pos, -6, 0.5, -6)
+            callback(currentValue)
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.CreateDropdown(config)
+    config = config or {}
+    local parent = config.Parent
+    local name = config.Name or "Dropdown"
+    local list = config.List or {}
+    local callback = config.Function or function() end
+    
+    local container = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 20),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = container
+    })
+    
+    local dropdown = CreateInstance("TextButton", {
+        Size = UDim2.new(1, -20, 0, 25),
+        Position = UDim2.new(0, 10, 0, 22),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        AutoButtonColor = false,
+        Text = list[1] or "Select...",
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        Parent = container
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = dropdown})
+    
+    local arrow = CreateInstance("ImageLabel", {
+        Size = UDim2.new(0, 12, 0, 12),
+        Position = UDim2.new(1, -22, 0.5, -6),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = Color3.fromRGB(162, 162, 162),
+        Rotation = 0,
+        Parent = dropdown
+    })
+    
+    local optionsFrame = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, math.min(#list * 25, 150)),
+        Position = UDim2.new(0, 0, 1, 5),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = 10,
+        Parent = dropdown
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = optionsFrame})
+    
+    local scroll = CreateInstance("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = GetRainbowColor(0),
+        CanvasSize = UDim2.new(0, 0, 0, #list * 25),
+        Parent = optionsFrame
+    })
+    
+    CreateInstance("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = scroll
+    })
+    
+    for i, option in ipairs(list) do
+        local opt = CreateInstance("TextButton", {
+            Size = UDim2.new(1, 0, 0, 25),
+            BackgroundTransparency = 1,
+            Text = option,
+            TextColor3 = Color3.fromRGB(162, 162, 162),
+            TextSize = 14,
+            Font = Enum.Font.SourceSans,
+            Parent = scroll
+        })
+        
+        opt.MouseEnter:Connect(function()
+            opt.BackgroundTransparency = 0.8
+            opt.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        end)
+        
+        opt.MouseLeave:Connect(function()
+            opt.BackgroundTransparency = 1
+        end)
+        
+        opt.MouseButton1Click:Connect(function()
+            dropdown.Text = option
+            optionsFrame.Visible = false
+            arrow.Rotation = 0
+            callback(option)
+        end)
+    end
+    
+    dropdown.MouseButton1Click:Connect(function()
+        optionsFrame.Visible = not optionsFrame.Visible
+        CreateTween(arrow, {Rotation = optionsFrame.Visible and 180 or 0}, 0.2):Play()
+    end)
+    
+    local api = {
+        Object = container,
+        Name = name,
+        Type = "Dropdown",
+        Value = list[1],
+        SetValue = function(val)
+            dropdown.Text = val
+            callback(val)
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.CreateTextBox(config)
+    config = config or {}
+    local parent = config.Parent
+    local name = config.Name or "TextBox"
+    local placeholder = config.Placeholder or "Enter text..."
+    local callback = config.FocusLost or function() end
+    
+    local container = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 20),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = container
+    })
+    
+    local textbox = CreateInstance("TextBox", {
+        Size = UDim2.new(1, -20, 0, 25),
+        Position = UDim2.new(0, 10, 0, 22),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        Text = "",
+        PlaceholderText = placeholder,
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        PlaceholderColor3 = Color3.fromRGB(100, 100, 100),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        ClearTextOnFocus = false,
+        Parent = container
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = textbox})
+    
+    textbox.FocusLost:Connect(function(enterPressed)
+        callback(enterPressed, textbox.Text)
+    end)
+    
+    local api = {
+        Object = container,
+        Name = name,
+        Type = "TextBox",
+        Value = "",
+        SetValue = function(val)
+            textbox.Text = val
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.CreateColorSlider(name, callback)
+    callback = callback or function() end
+    
+    local settingsWin = ObjectsThatCanBeSaved["SettingsWindow"]
+    local parent = settingsWin and settingsWin.Content
+    
+    local container = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 60),
+        BackgroundTransparency = 1,
+        Parent = parent
+    })
+    
+    local label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 20),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(162, 162, 162),
+        TextSize = 15,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = container
+    })
+    
+    local hueSlider = CreateInstance("Frame", {
+        Size = UDim2.new(1, -20, 0, 10),
+        Position = UDim2.new(0, 10, 0, 25),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Parent = container
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = hueSlider})
+    
+    local hueGradient = CreateInstance("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+        }),
+        Parent = hueSlider
+    })
+    
+    local hueIndicator = CreateInstance("Frame", {
+        Size = UDim2.new(0, 4, 1, 4),
+        Position = UDim2.new(CurrentTheme.Hue, -2, 0, -2),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = hueSlider
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 2), Parent = hueIndicator})
+    
+    local dragging = false
+    
+    hueSlider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            local pos = math.clamp((input.Position.X - hueSlider.AbsolutePosition.X) / hueSlider.AbsoluteSize.X, 0, 1)
+            CurrentTheme.Hue = pos
+            hueIndicator.Position = UDim2.new(pos, -2, 0, -2)
+            JackalUI.UpdateUI()
+            callback(CurrentTheme.Hue, CurrentTheme.Sat, CurrentTheme.Val)
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = math.clamp((input.Position.X - hueSlider.AbsolutePosition.X) / hueSlider.AbsoluteSize.X, 0, 1)
+            CurrentTheme.Hue = pos
+            hueIndicator.Position = UDim2.new(pos, -2, 0, -2)
+            JackalUI.UpdateUI()
+            callback(CurrentTheme.Hue, CurrentTheme.Sat, CurrentTheme.Val)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local api = {
+        Object = container,
+        Name = name,
+        Type = "ColorSlider",
+        Hue = CurrentTheme.Hue,
+        Sat = CurrentTheme.Sat,
+        Value = CurrentTheme.Val,
+        RainbowValue = false,
+        SetRainbow = function(state)
+            RainbowEnabled = state
+            api.RainbowValue = state
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.CreateCustomWindow(config)
+    config = config or {}
+    local name = config.Name or "Custom"
+    local icon = config.Icon
+    local iconSize = config.IconSize or 16
+    
+    local window = CreateInstance("Frame", {
+        Name = name.."CustomWindow",
+        Size = UDim2.new(0, 200, 0, 200),
+        Position = UDim2.new(0, 450, 0, 6),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        BorderSizePixel = 0,
+        Visible = false,
+        Parent = MainGui.ScaledGui.ClickGui
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = window})
+    
+    local shadow = CreateInstance("ImageLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(1, 6, 1, 6),
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = Color3.new(),
+        ImageTransparency = 0.6,
+        BackgroundTransparency = 1,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = Rect.new(10, 10, 118, 118),
+        ZIndex = -1,
+        Parent = window
+    })
+    
+    local header = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 35),
+        BackgroundTransparency = 1,
+        Parent = window
+    })
+    
+    if icon then
+        local iconImg = CreateInstance("ImageLabel", {
+            Size = UDim2.new(0, iconSize, 0, iconSize),
+            Position = UDim2.new(0, 10, 0, (35 - iconSize) / 2),
+            BackgroundTransparency = 1,
+            Image = icon,
+            ImageColor3 = Color3.fromRGB(200, 200, 200),
+            Parent = header
+        })
+    end
+    
+    local title = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -40, 0, 35),
+        Position = UDim2.new(0, icon and 35 or 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        TextColor3 = Color3.fromRGB(201, 201, 201),
+        TextSize = 17,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = header
+    })
+    
+    local topBar = CreateInstance("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 0, 35),
+        BackgroundColor3 = Color3.fromRGB(40, 39, 40),
+        BorderSizePixel = 0,
+        Parent = window
+    })
+    
+    local customChildren = CreateInstance("Frame", {
+        Name = "CustomChildren",
+        Size = UDim2.new(1, -10, 1, -45),
+        Position = UDim2.new(0, 5, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = window
+    })
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = window.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local api = {
+        Object = window,
+        GetCustomChildren = function() return customChildren end,
+        Name = name,
+        Type = "CustomWindow",
+        SetVisible = function(visible) window.Visible = visible end,
+        CreateToggle = function(cfg) cfg.Parent = customChildren return JackalUI.CreateToggle(cfg) end,
+        CreateSlider = function(cfg) cfg.Parent = customChildren return JackalUI.CreateSlider(cfg) end,
+        CreateDropdown = function(cfg) cfg.Parent = customChildren return JackalUI.CreateDropdown(cfg) end,
+        CreateTextBox = function(cfg) cfg.Parent = customChildren return JackalUI.CreateTextBox(cfg) end
+    }
+    
+    ObjectsThatCanBeSaved[name.."CustomWindow"] = api
+    return api
+end
+
+function JackalUI.CreateCustomToggle(config)
+    config = config or {}
+    local parent = config.Parent or ObjectsThatCanBeSaved["MainWindow"].ButtonContainer
+    local name = config.Name or "Custom"
+    local icon = config.Icon
+    local callback = config.Function or function() end
+    local priority = config.Priority or 99
+    
+    local button = CreateInstance("TextButton", {
+        Name = name.."CustomToggle",
+        Size = UDim2.new(0, 30, 0, 30),
+        BackgroundColor3 = Color3.fromRGB(26, 25, 26),
+        AutoButtonColor = false,
+        Text = "",
+        LayoutOrder = priority,
+        Parent = parent
+    })
+    
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 4), Parent = button})
+    
+    local stroke = CreateInstance("UIStroke", {
+        Color = Color3.fromRGB(38, 37, 38),
+        Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = button
+    })
+    
+    if icon then
+        local iconImg = CreateInstance("ImageLabel", {
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(0.5, -10, 0.5, -10),
+            BackgroundTransparency = 1,
+            Image = icon,
+            ImageColor3 = Color3.fromRGB(162, 162, 162),
+            Parent = button
+        })
+    end
+    
+    local enabled = false
+    
+    button.MouseEnter:Connect(function()
+        CreateTween(button, {BackgroundColor3 = Color3.fromRGB(40, 39, 40)}, 0.1):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if not enabled then
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(26, 25, 26)}, 0.1):Play()
+        end
+    end)
+    
+    button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}, 0.1):Play()
+            if button:FindFirstChild("ImageLabel") then
+                button.ImageLabel.ImageColor3 = GetRainbowColor(0)
+            end
+        else
+            CreateTween(button, {BackgroundColor3 = Color3.fromRGB(26, 25, 26)}, 0.1):Play()
+            if button:FindFirstChild("ImageLabel") then
+                button.ImageLabel.ImageColor3 = Color3.fromRGB(162, 162, 162)
+            end
+        end
+        callback(enabled)
+    end)
+    
+    return {
+        Object = button,
+        Name = name,
+        Type = "CustomToggle",
+        Enabled = enabled
+    }
+end
+
+function JackalUI.CreateTextGUI()
+    local textGui = CreateInstance("Frame", {
+        Name = "TextGUI",
+        Size = UDim2.new(0, 200, 0, 300),
+        Position = UDim2.new(0, 10, 0, 10),
+        BackgroundTransparency = 1,
+        Parent = MainGui.ScaledGui
+    })
+    
+    local logo = CreateInstance("ImageLabel", {
+        Name = "Logo",
+        Size = UDim2.new(0, 100, 0, 27),
+        Position = UDim2.new(1, -140, 0, 3),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://8992235157",
+        ImageColor3 = GetRainbowColor(0),
+        Parent = textGui
+    })
+    
+    local textLabel = CreateInstance("TextLabel", {
+        Name = "ModuleText",
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(1, -154, 0, 35),
+        BackgroundTransparency = 1,
+        Text = "",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 23,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        RichText = true,
+        Parent = textGui
+    })
+    
+    local shadow = CreateInstance("TextLabel", {
+        Name = "Shadow",
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 1, 0, 1),
+        BackgroundTransparency = 1,
+        Text = "",
+        TextColor3 = Color3.new(),
+        TextTransparency = 0.5,
+        TextSize = 23,
+        Font = Enum.Font.SourceSans,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Visible = false,
+        ZIndex = 0,
+        Parent = textLabel
+    })
+    
+    local background = CreateInstance("Frame", {
+        Name = "Background",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = 0,
+        Parent = textGui
+    })
+    
+    local bgList = CreateInstance("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 0),
+        Parent = background
+    })
+    
+    local api = {
+        Object = textGui,
+        SetVisible = function(visible) 
+            textGui.Visible = visible
+        end,
+        UpdateText = function(modules)
+            local formatted = ""
+            local bgFrames = {}
+            
+            for i, mod in ipairs(modules) do
+                local color = GetRainbowColor(-0.025 * i)
+                local colorStr = string.format("rgb(%d,%d,%d)", math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255))
+                formatted = formatted .. '<font color="' .. colorStr .. '">' .. mod.Name .. '</font>\n'
+                
+                local bgFrame = CreateInstance("Frame", {
+                    Size = UDim2.new(0, GetTextSize(mod.Name, 23).X + 8, 0, 23),
+                    BackgroundTransparency = 0.62,
+                    BackgroundColor3 = Color3.new(),
+                    BorderSizePixel = 0,
+                    LayoutOrder = i,
+                    Parent = background
+                })
+                
+                local colorLine = CreateInstance("Frame", {
+                    Size = UDim2.new(0, 2, 1, 0),
+                    BackgroundColor3 = color,
+                    BorderSizePixel = 0,
+                    Parent = bgFrame
+                })
+                
+                table.insert(bgFrames, bgFrame)
+            end
+            
+            textLabel.Text = formatted
+            shadow.Text = formatted
+            
+            for i, v in pairs(background:GetChildren()) do
+                if v:IsA("Frame") and not table.find(bgFrames, v) then
+                    v:Destroy()
+                end
+            end
+        end
+    }
+    
+    return api
+end
+
+function JackalUI.UpdateUI()
+    local mainRainbowSat = RainbowEnabled and GetVapeSaturation(CurrentTheme.Hue) or CurrentTheme.Sat
+    local mainColor = Color3.fromHSV(CurrentTheme.Hue, mainRainbowSat, RainbowEnabled and 1 or CurrentTheme.Val)
+    
+    if MainGui then
+        local mainWin = MainGui.ScaledGui.ClickGui:FindFirstChild("MainWindow")
+        if mainWin then
+            local logo1 = mainWin:FindFirstChild("Logo1", true)
+            if logo1 then
+                logo1.TextColor3 = mainColor
+            end
+        end
+    end
+    
+    for i, v in pairs(ObjectsThatCanBeSaved) do
+        if v.Type == "Button" and v.Enabled then
+            local btnText = v.Object:FindFirstChild("ButtonText")
+            if btnText then
+                btnText.TextColor3 = mainColor
+            end
+            local btnIcon = v.Object:FindFirstChild("ButtonIcon")
+            if btnIcon then
+                btnIcon.ImageColor3 = mainColor
+            end
+        elseif v.Type == "Toggle" and v.Enabled then
+            local toggleFrame = v.Object:FindFirstChild("ToggleFrame1")
+            if toggleFrame then
+                toggleFrame.BackgroundColor3 = mainColor
+            end
+        elseif v.Type == "Slider" then
+            local slider = v.Object:FindFirstChild("Slider")
+            if slider then
+                local fill = slider:FindFirstChild("FillSlider")
+                local btn = slider:FindFirstChild("ButtonSlider")
+                if fill then fill.BackgroundColor3 = mainColor end
+                if btn then btn.ImageColor3 = mainColor end
+            end
+        elseif v.Type == "CustomWindow" or v.Type == "Window" then
+            if v.Object.Visible then
+                local scroll = v.Object:FindFirstChild("Content", true)
+                if scroll then
+                    for _, child in pairs(scroll:GetDescendants()) do
+                        if child:IsA("Frame") and child.Name == "ColorFrame" then
+                            child.BackgroundColor3 = mainColor
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function JackalUI.ToggleGUI()
+    local clickGui = MainGui and MainGui.ScaledGui and MainGui.ScaledGui.ClickGui
+    if clickGui then
+        clickGui.Visible = not clickGui.Visible
+        MainBlur.Size = clickGui.Visible and 25 or 0
+        RunService:SetRobloxGuiFocused(clickGui.Visible)
+    end
+end
+
+function JackalUI.SelfDestruct()
+    UIInjected = false
+    if MainGui then
+        MainGui:Destroy()
+    end
+    if MainBlur then
+        MainBlur:Destroy()
+    end
+    RunService:SetRobloxGuiFocused(false)
+    ObjectsThatCanBeSaved = {}
+end
+
+local function StartRainbowLoop()
+    task.spawn(function()
+        while UIInjected do
+            if RainbowEnabled then
+                CurrentTheme.Hue = (CurrentTheme.Hue + (RainbowSpeed / 100)) % 1
+                JackalUI.UpdateUI()
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
+        JackalUI.ToggleGUI()
+    end
+end)
+
+local function Initialize()
+    JackalUI.CreateMainWindow()
+    
+    local combat = JackalUI.CreateWindow({Name = "Combat", Icon = "rbxassetid://8992235157", IconSize = 15})
+    local blatant = JackalUI.CreateWindow({Name = "Blatant", Icon = "rbxassetid://8992235157", IconSize = 16})
+    local render = JackalUI.CreateWindow({Name = "Render", Icon = "rbxassetid://8992235157", IconSize = 17})
+    local utility = JackalUI.CreateWindow({Name = "Utility", Icon = "rbxassetid://8992235157", IconSize = 17})
+    local world = JackalUI.CreateWindow({Name = "World", Icon = "rbxassetid://8992235157", IconSize = 16})
+    
+    JackalUI.CreateDivider(nil, "MODULES")
+    
+    JackalUI.CreateButton({
+        Name = "Combat",
+        Window = combat,
+        Icon = "rbxassetid://8992235157",
+        IconSize = 15,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Blatant",
+        Window = blatant,
+        Icon = "rbxassetid://8992235157",
+        IconSize = 16,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Render",
+        Window = render,
+        Icon = "rbxassetid://8992235157",
+        IconSize = 17,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Utility",
+        Window = utility,
+        Icon = "rbxassetid://8992235157",
+        IconSize = 17,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "World",
+        Window = world,
+        Icon = "rbxassetid://8992235157",
+        IconSize = 16,
+        Function = function() end
+    })
+    
+    JackalUI.CreateDivider(nil, "MISC")
+    
+    local friends = JackalUI.CreateWindow({Name = "Friends", Icon = "rbxassetid://8992235157", IconSize = 17})
+    local targets = JackalUI.CreateWindow({Name = "Targets", Icon = "rbxassetid://8992235157", IconSize = 17})
+    local profiles = JackalUI.CreateWindow({Name = "Profiles", Icon = "rbxassetid://8992235157", IconSize = 19})
+    local settings = JackalUI.CreateWindow({Name = "Settings", Icon = "rbxassetid://8992235157", IconSize = 16})
+    
+    JackalUI.CreateButton({
+        Name = "Friends",
+        Window = friends,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Targets",
+        Window = targets,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Profiles",
+        Window = profiles,
+        Function = function() end
+    })
+    
+    JackalUI.CreateButton({
+        Name = "Settings",
+        Window = settings,
+        Function = function() end
+    })
+    
+    JackalUI.CreateDivider(nil, "GUI")
+    
+    local textGui = JackalUI.CreateTextGUI()
+    
+    JackalUI.CreateCustomToggle({
+        Name = "Text GUI",
+        Icon = "rbxassetid://8992235157",
+        Priority = 2,
+        Function = function(callback)
+            textGui.SetVisible(callback)
+        end
+    })
+    
+    JackalUI.CreateToggle({
+        Parent = settings.Content,
+        Name = "Blur Background",
+        Default = true,
+        Function = function(callback)
+            MainBlur.Size = callback and 25 or 0
+        end
+    })
+    
+    JackalUI.CreateToggle({
+        Parent = settings.Content,
+        Name = "Rainbow Mode",
+        Function = function(callback)
+            RainbowEnabled = callback
+        end
+    })
+    
+    JackalUI.CreateSlider({
+        Parent = settings.Content,
+        Name = "Rainbow Speed",
+        Min = 1,
+        Max = 100,
+        Default = 10,
+        Function = function(val)
+            RainbowSpeed = val / 10
+        end
+    })
+    
+    JackalUI.CreateToggle({
+        Parent = settings.Content,
+        Name = "Notifications",
+        Default = true,
+        Function = function(callback)
+            NotificationsEnabled = callback
+        end
+    })
+    
+    JackalUI.CreateToggle({
+        Parent = settings.Content,
+        Name = "Tooltips",
+        Default = true,
+        Function = function(callback)
+            ToggleTooltips = callback
+        end
+    })
+    
+    JackalUI.CreateColorSlider("GUI Theme", function(h, s, v)
+        CurrentTheme.Hue = h
+        CurrentTheme.Sat = s
+        CurrentTheme.Val = v
+        JackalUI.UpdateUI()
+    end)
+    
+    StartRainbowLoop()
+    
+    JackalUI.CreateNotification("Jackal UI", "Press RIGHTSHIFT to toggle GUI", 5)
+end
+
+Initialize()
+
+return JackalUI
+'''
+
+# Save to file
+with open('/mnt/kimi/output/JackalUI.lua', 'w', encoding='utf-8') as f:
+    f.write(ui_library_code)
+
+print("UI Library saved successfully!")
+print(f"Total lines: {len(ui_library_code.split(chr(10)))}")
+print(f"Total characters: {len(ui_library_code)}")
